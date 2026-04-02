@@ -146,13 +146,73 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (populated by roadmapper) | | |
+| INFRA-01 | Phase 1 | Pending |
+| INFRA-02 | Phase 1 | Pending |
+| INFRA-03 | Phase 1 | Pending |
+| INFRA-04 | Phase 1 | Pending |
+| INFRA-05 | Phase 1 | Pending |
+| INFRA-06 | Phase 1 | Pending |
+| INFRA-07 | Phase 1 | Pending |
+| INFRA-08 | Phase 1 | Pending |
+| INFRA-09 | Phase 1 | Pending |
+| INFRA-11 | Phase 1 | Pending |
+| INFRA-12 | Phase 1 | Pending |
+| MAIL-01 | Phase 2 | Pending |
+| MAIL-02 | Phase 2 | Pending |
+| MAIL-03 | Phase 2 | Pending |
+| MAIL-04 | Phase 2 | Pending |
+| MAIL-05 | Phase 2 | Pending |
+| MAIL-06 | Phase 2 | Pending |
+| MAIL-07 | Phase 2 | Pending |
+| MAIL-08 | Phase 2 | Pending |
+| MAIL-09 | Phase 2 | Pending |
+| MAIL-10 | Phase 2 | Pending |
+| MAIL-11 | Phase 2 | Pending |
+| MAIL-12 | Phase 2 | Pending |
+| MAIL-13 | Phase 2 | Pending |
+| MAIL-14 | Phase 2 | Pending |
+| RAG-01 | Phase 2 | Pending |
+| RAG-02 | Phase 2 | Pending |
+| RAG-03 | Phase 2 | Pending |
+| RAG-04 | Phase 2 | Pending |
+| RAG-05 | Phase 2 | Pending |
+| RAG-06 | Phase 2 | Pending |
+| PERS-01 | Phase 2 | Pending |
+| PERS-02 | Phase 2 | Pending |
+| PERS-03 | Phase 2 | Pending |
+| PERS-04 | Phase 2 | Pending |
+| PERS-05 | Phase 2 | Pending |
+| ONBR-01 | Phase 2 | Pending |
+| ONBR-02 | Phase 2 | Pending |
+| ONBR-03 | Phase 2 | Pending |
+| ONBR-04 | Phase 2 | Pending |
+| ONBR-05 | Phase 2 | Pending |
+| ONBR-06 | Phase 2 | Pending |
+| APPR-01 | Phase 2 | Pending |
+| APPR-02 | Phase 2 | Pending |
+| APPR-03 | Phase 3 | Pending |
+| APPR-04 | Phase 3 | Pending |
+| APPR-05 | Phase 3 | Pending |
+| APPR-06 | Phase 3 | Pending |
+| NOTF-01 | Phase 3 | Pending |
+| NOTF-02 | Phase 3 | Pending |
+| INFRA-10 | Phase 3 | Pending |
+| DASH-01 | Phase 4 | Pending |
+| DASH-02 | Phase 4 | Pending |
+| DASH-03 | Phase 4 | Pending |
+| DASH-04 | Phase 4 | Pending |
+| DASH-05 | Phase 4 | Pending |
+| DASH-06 | Phase 4 | Pending |
+| DASH-07 | Phase 4 | Pending |
+| DASH-08 | Phase 4 | Pending |
+| DASH-09 | Phase 4 | Pending |
+| DASH-10 | Phase 4 | Pending |
 
 **Coverage:**
-- v1 requirements: 50 total
-- Mapped to phases: 0
-- Unmapped: 50 ⚠️
+- v1 requirements: 61 total
+- Mapped to phases: 61
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-02*
-*Last updated: 2026-04-02 after initial definition*
+*Last updated: 2026-04-02 after roadmap creation*
