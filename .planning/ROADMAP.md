@@ -33,7 +33,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 - [x] 01-01-PLAN.md — Docker Compose stack, env template, Postgres schema init, dashboard placeholder
 - [ ] 01-02-PLAN.md — First-boot checkpoint script (JetPack validation through compose start)
-- [ ] 01-03-PLAN.md — Smoke test script (all success criteria + boot time verification)
+- [x] 01-03-PLAN.md — Smoke test script (all success criteria + boot time verification)
 
 ### Phase 2: Email Pipeline Core
 **Goal**: A real inbound email flows from IMAP through classification and RAG-augmented drafting into an approval queue, and the approved draft sends via SMTP from the customer's address — with persona extracted from sent history at first boot
@@ -79,7 +79,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Infrastructure Foundation | 0/3 | Not started | - |
+| 1. Infrastructure Foundation | 2/3 | In Progress|  |
 | 2. Email Pipeline Core | 0/TBD | Not started | - |
 | 3. Operator Trust and Reliability | 0/TBD | Not started | - |
 | 4. Dashboard and Hardening | 0/TBD | Not started | - |

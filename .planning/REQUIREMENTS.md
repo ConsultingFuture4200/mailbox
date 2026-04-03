@@ -20,7 +20,7 @@ Requirements for Phase 1 internal dogfood. Each maps to roadmap phases.
 - [x] **INFRA-09**: Postgres 17 with persistent volume, separate schemas for n8n (public) and mailbox data
 - [ ] **INFRA-10**: OTA update mechanism: dashboard button pulls new images from GHCR, runs docker compose up -d
 - [ ] **INFRA-11**: NVMe disk encryption (LUKS) for all customer data at rest
-- [ ] **INFRA-12**: System boot to fully operational in < 3 minutes
+- [x] **INFRA-12**: System boot to fully operational in < 3 minutes
 
 ### Email Pipeline
 
@@ -156,7 +156,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFRA-08 | Phase 1 | Complete |
 | INFRA-09 | Phase 1 | Complete |
 | INFRA-11 | Phase 1 | Pending |
-| INFRA-12 | Phase 1 | Pending |
+| INFRA-12 | Phase 1 | Complete |
 | MAIL-01 | Phase 2 | Pending |
 | MAIL-02 | Phase 2 | Pending |
 | MAIL-03 | Phase 2 | Pending |
