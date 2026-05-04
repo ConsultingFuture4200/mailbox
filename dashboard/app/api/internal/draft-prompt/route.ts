@@ -46,6 +46,9 @@ export async function POST(req: NextRequest) {
         'body_text',
         'classification_category',
         'classification_confidence',
+        // STAQPRO-219 — passed into retrieveForDraft so it can compute the
+        // inbound's own point UUID and exclude it via must_not.has_id.
+        'message_id',
       ])
       .where('id', '=', draft_id)
       .limit(1)
@@ -82,6 +85,8 @@ export async function POST(req: NextRequest) {
       body_text: row.body_text ?? null,
       draft_source: endpoint.source,
       persona_key: DEFAULT_PERSONA_KEY,
+      // STAQPRO-219 — drop self-match from retrieval via must_not.has_id.
+      message_id: row.message_id,
     });
 
     const assembled = assemblePrompt({

@@ -163,6 +163,9 @@ async function runDraftPass(
     body_text: pair.inbound_body ?? null,
     draft_source: endpoint.source,
     persona_key: DEFAULT_PERSONA_KEY,
+    // STAQPRO-219 — drop self-match from retrieval (inspect harness mirrors
+    // live drafter behavior).
+    message_id: pair.message_id,
   });
 
   const assembled = assemblePrompt({

@@ -145,6 +145,12 @@ export interface SearchOptions {
   // owns the in-flight draft. When unset, no persona filter is applied
   // (single-persona appliances retain previous behavior).
   personaKey?: string;
+  // STAQPRO-219 — drop the inbound's own backfilled twin from search via
+  // Qdrant's must_not + has_id filter primitive (Qdrant 1.13+). Without
+  // this, the inbound's own embedding scores 1.000 against itself and
+  // burns one top-k slot on every query. Caller passes the inbound's own
+  // deterministic point UUID (pointIdFromMessageId(message_id)).
+  excludePointId?: string;
 }
 
 // Search by vector with optional hard filters on payload.sender and
@@ -159,7 +165,16 @@ export async function searchByVector(
   const must: Array<{ key: string; match: { value: string } }> = [];
   if (opts.senderFilter) must.push({ key: 'sender', match: { value: opts.senderFilter } });
   if (opts.personaKey) must.push({ key: 'persona_key', match: { value: opts.personaKey } });
-  const filter = must.length > 0 ? { must } : undefined;
+  // STAQPRO-219 — must_not.has_id drops the inbound's own UUID from results.
+  const must_not: Array<{ has_id: string[] }> = [];
+  if (opts.excludePointId) must_not.push({ has_id: [opts.excludePointId] });
+  const filter =
+    must.length > 0 || must_not.length > 0
+      ? {
+          ...(must.length > 0 ? { must } : {}),
+          ...(must_not.length > 0 ? { must_not } : {}),
+        }
+      : undefined;
   try {
     const r = await qdrantRequest('POST', `/collections/${COLLECTION}/points/search`, {
       vector,

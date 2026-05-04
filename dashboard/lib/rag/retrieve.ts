@@ -44,7 +44,7 @@
 import { embedText } from './embed';
 import { buildBodyExcerpt, buildEmbeddingInput } from './excerpt';
 import { searchKb } from './kb-qdrant';
-import { normalizeSender, searchByVector } from './qdrant';
+import { normalizeSender, pointIdFromMessageId, searchByVector } from './qdrant';
 
 export interface RetrievalRef {
   point_id: string;
@@ -116,6 +116,15 @@ export interface RetrievalInput {
   // the value written into payload.persona_key at ingestion time or the
   // search returns zero hits.
   persona_key: string;
+  // STAQPRO-219 — Gmail message_id of the inbound being drafted against.
+  // Used to compute the inbound's own deterministic point UUID and exclude
+  // it from search results via must_not.has_id. Without this filter, the
+  // inbound's backfilled twin scores 1.000 against itself and wastes one
+  // top-k slot on every query (Phase-B inspection: 10/10 outliers had a
+  // self-match as their top ref). Optional only because the eval harness
+  // and legacy callers may not have a message_id handy — when omitted,
+  // self-filtering is skipped.
+  message_id?: string | null;
 }
 
 function topK(): number {
@@ -213,11 +222,19 @@ export async function retrieveForDraft(input: RetrievalInput): Promise<Retrieval
   // KB has no sender filter (corpus-wide policy content); email is sender-
   // and persona-scoped per STAQPRO-191. Promise.all keeps the wall-clock
   // overhead to max(email_search, kb_search), not the sum.
+  //
+  // STAQPRO-219 — drop the inbound's own backfilled twin from email search
+  // via must_not.has_id. The point UUID is deterministic (sha256-derived),
+  // so we can compute it locally without a Qdrant lookup. Only applies when
+  // a message_id was supplied — eval harness and legacy callers without a
+  // message_id retain pre-219 behavior (self-match contamination + all).
+  const selfPointId = input.message_id ? pointIdFromMessageId(input.message_id) : undefined;
   const [emailSearch, kbSearch] = await Promise.all([
     searchByVector(vector, {
       limit: topK(),
       senderFilter: normalizedSender,
       personaKey: input.persona_key,
+      excludePointId: selfPointId,
     }),
     searchKb(vector, { limit: kbTopK() }),
   ]);

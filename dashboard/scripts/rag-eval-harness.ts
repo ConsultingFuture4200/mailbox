@@ -338,6 +338,10 @@ export async function generateDraft(
     body_text: pair.inbox_body ?? null,
     draft_source: endpoint.source,
     persona_key: DEFAULT_PERSONA_KEY,
+    // STAQPRO-219 — drop self-match from retrieval so the eval measures
+    // real-prior recall, not unit-cosine self-cosine. Same path the live
+    // drafter takes via /api/internal/draft-prompt.
+    message_id: pair.inbox_message_id,
   });
   const assembled = assemblePrompt({
     from_addr: pair.inbox_from ?? '',
