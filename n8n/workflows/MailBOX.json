@@ -97,7 +97,7 @@
       "name": "Get many messages",
       "parameters": {
         "filters": {
-          "q": "in:inbox"
+          "q": "is:unread newer_than:2d"
         },
         "limit": 1000,
         "operation": "getAll",
