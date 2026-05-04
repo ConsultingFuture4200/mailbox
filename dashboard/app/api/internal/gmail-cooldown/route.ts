@@ -20,10 +20,26 @@ import { getGmailCooldown } from '@/lib/queries-system-state';
 
 export const dynamic = 'force-dynamic';
 
+// Buffer past Google's last "Retry-After" hint before reopening the gate.
+// Google's hint is a MIN wait, not a guarantee — if we probe right at the
+// hint timestamp and probation hasn't actually cleared, Google ratchets +15
+// min (per gmail_ratelimit_probation memory). Live evidence 2026-05-04:
+// 22:15 cycle probed at hint+0, got fresh 429, +15 min. Without buffer the
+// 5-min-probe / +15-min-ratchet loop NEVER clears.
+//
+// 20 min picked to give probation 20 min of decay between probes, > the
+// observed +15 min extension cost. If probes still fail, escalate to
+// exponential backoff (consecutive-429 counter) — filed as STAQPRO-229.
+const BUFFER_MS = 20 * 60 * 1000;
+
 export async function GET(): Promise<NextResponse> {
   const cooldown = await getGmailCooldown();
+  const effectiveUntil = cooldown.until
+    ? new Date(cooldown.until.getTime() + BUFFER_MS)
+    : null;
+  const inCooldown = effectiveUntil !== null && effectiveUntil.getTime() > Date.now();
   return NextResponse.json({
-    in_cooldown: cooldown.isActive,
-    until: cooldown.until?.toISOString() ?? null,
+    in_cooldown: inCooldown,
+    until: effectiveUntil?.toISOString() ?? null,
   });
 }
