@@ -78,6 +78,11 @@ services:
       N8N_PORT: 5678
       N8N_PROTOCOL: https
       N8N_SECURE_COOKIE: 'true'
+      # Caddy fronts n8n with one upstream hop. Without this, n8n's internal
+      # express-rate-limit middleware refuses the X-Forwarded-For header
+      # (Express trust proxy = false default) and floods logs every webhook
+      # call. STAQPRO-228.
+      N8N_PROXY_HOPS: '1'
     volumes:
     - n8n_data:/home/node/.n8n
     healthcheck:
