@@ -266,6 +266,7 @@ async function callHaikuJudge(input: JudgePromptInput, deps: JudgeCallDeps): Pro
   const body = {
     model: ANTHROPIC_MODEL,
     max_tokens: JUDGE_MAX_OUTPUT_TOKENS,
+    temperature: 0,
     system: JUDGE_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userMessage }],
   };

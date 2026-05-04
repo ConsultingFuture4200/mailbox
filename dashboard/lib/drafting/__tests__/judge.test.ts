@@ -220,6 +220,9 @@ describe('callJudge — haiku', () => {
     const headers = captured.init?.headers as Record<string, string>;
     expect(headers['x-api-key']).toBe('sk-test');
     expect(headers['anthropic-version']).toBe('2023-06-01');
+    // Linus STAQPRO-220 review: judge must be deterministic — temperature pinned to 0
+    const sentBody = JSON.parse((captured.init?.body as string) ?? '{}');
+    expect(sentBody.temperature).toBe(0);
   });
 
   it('returns call_failed when the API key is missing', async () => {
