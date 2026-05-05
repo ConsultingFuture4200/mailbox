@@ -45,6 +45,12 @@ export interface DraftPromptInput {
   // so the LLM treats them as authoritative policy content, not
   // conversational context. Same {source, excerpt} contract as rag_refs.
   kb_refs?: ReadonlyArray<{ source: string; excerpt: string }>;
+  // STAQPRO-234 — auto-mined few-shot exemplars from mailbox.sent_history.
+  // Distinct prompt slot ("Past replies you've sent for this kind of message")
+  // so the LLM mimics the operator's past phrasings on this category.
+  // Different semantics from rag_refs (vector-similar emails) and kb_refs
+  // (operator-uploaded SOPs) → different surface, per Neo Architect.
+  exemplar_refs?: ReadonlyArray<{ snippet: string; sent_at: string; subject?: string }>;
 }
 
 // D-45 egress allowlist: when the assembled prompt is sent to a non-local
@@ -119,11 +125,49 @@ function threadBlock(input: DraftPromptInput): string {
   return lines.join('\n');
 }
 
+// STAQPRO-234 — re-allocate RAG slot when exemplars are present.
+//
+// Budget math (DR-18: 4096 ctx local, ~450 tokens of augmentation):
+// - With exemplars:    1 exemplar (~600c / ~150t) + 2 RAG refs (~1200c / ~300t) = ~450t
+// - Without exemplars: 3 RAG refs (~1800c / ~450t) — today's behavior unchanged
+//
+// Token budget is re-allocated WITHIN the existing slice; total context never
+// grows. When `exemplar_refs` is empty (early-onboarding category with no
+// sent_history yet, or fail-closed empty from getCategoryExemplars) we fall
+// back to today's 3-ref RAG path so nothing regresses.
+const RAG_REFS_CAP_DEFAULT = 3;
+const RAG_REFS_CAP_WHEN_EXEMPLARS = 2;
+
+function effectiveRagRefsCap(input: DraftPromptInput): number {
+  return input.exemplar_refs && input.exemplar_refs.length > 0
+    ? RAG_REFS_CAP_WHEN_EXEMPLARS
+    : RAG_REFS_CAP_DEFAULT;
+}
+
 function ragBlock(input: DraftPromptInput): string {
   if (!input.rag_refs || input.rag_refs.length === 0) return '';
+  const cap = effectiveRagRefsCap(input);
   const lines: string[] = ['', '## Reference snippets (use only if relevant)'];
-  for (const ref of input.rag_refs.slice(0, 3)) {
+  for (const ref of input.rag_refs.slice(0, cap)) {
     lines.push(`[${ref.source}] ${ref.excerpt.slice(0, 600)}`);
+  }
+  return lines.join('\n');
+}
+
+// STAQPRO-234 — past-replies block. Auto-mined from mailbox.sent_history.
+// Section header explicitly says "you've sent" so the LLM mimics phrasing as
+// the operator's voice rather than treating it as third-party reference.
+// Cap at 1 exemplar by default (caller passes k=1) but accept up to 2 in
+// case Phase 1 evals show the model benefits — same 600-char per-snippet
+// cap as ragBlock + kbBlock.
+function exemplarBlock(input: DraftPromptInput): string {
+  if (!input.exemplar_refs || input.exemplar_refs.length === 0) return '';
+  const lines: string[] = ['', "## Past replies you've sent for this kind of message"];
+  // Cap at 2 max; the typical caller passes k=1.
+  for (const ex of input.exemplar_refs.slice(0, 2)) {
+    const date = ex.sent_at ? ` (${ex.sent_at.slice(0, 10)})` : '';
+    const subj = ex.subject ? ` "${ex.subject.slice(0, 80)}"` : '';
+    lines.push(`Reply${date}${subj}:`, ex.snippet.slice(0, 600));
   }
   return lines.join('\n');
 }
@@ -165,6 +209,10 @@ export function buildUserPrompt(input: DraftPromptInput): string {
     '',
     safeBody,
     threadBlock(input),
+    // STAQPRO-234 — exemplars FIRST so the LLM anchors on the operator's own
+    // voice from prior replies before reading the conversational RAG / KB
+    // reference snippets. Empty → fall through to today's RAG-only behavior.
+    exemplarBlock(input),
     ragBlock(input),
     kbBlock(input),
     '',

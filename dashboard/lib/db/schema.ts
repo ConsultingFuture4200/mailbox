@@ -50,6 +50,7 @@ export interface Drafts {
   draft_source: string | null;
   draft_subject: string | null;
   error_message: string | null;
+  exemplar_refs: Generated<Json>;
   from_addr: string | null;
   id: Generated<number>;
   in_reply_to: string | null;
@@ -163,6 +164,7 @@ export interface SentHistory {
   draft_original: string | null;
   draft_sent: string;
   draft_source: string;
+  exemplar_refs: Generated<Json>;
   from_addr: string;
   id: Generated<Int8>;
   inbox_message_id: number | null;

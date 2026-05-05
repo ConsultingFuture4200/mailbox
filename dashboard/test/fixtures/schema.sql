@@ -906,6 +906,14 @@ CREATE TABLE IF NOT EXISTS mailbox.system_state (
 );
 INSERT INTO mailbox.system_state (id) VALUES (1) ON CONFLICT DO NOTHING;
 
+-- ── STAQPRO-234 (migration 020): drafts.exemplar_refs sibling column ───
+-- Hand-applied to fixture pending next pg_dump refresh. Few-shot exemplars
+-- from sent_history (Phase 1 of KB plan).
+ALTER TABLE mailbox.drafts
+  ADD COLUMN IF NOT EXISTS exemplar_refs JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE mailbox.sent_history
+  ADD COLUMN IF NOT EXISTS exemplar_refs JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 --
 -- PostgreSQL database dump complete
 --
