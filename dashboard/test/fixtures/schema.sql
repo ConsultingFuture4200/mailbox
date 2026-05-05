@@ -913,6 +913,40 @@ ALTER TABLE mailbox.drafts
   ADD COLUMN IF NOT EXISTS exemplar_refs JSONB NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE mailbox.sent_history
   ADD COLUMN IF NOT EXISTS exemplar_refs JSONB NOT NULL DEFAULT '[]'::jsonb;
+-- ── STAQPRO-233 (migration 019): drafting telemetry views ─────────────
+-- Hand-applied to fixture pending next pg_dump refresh from Bob. Two
+-- read-only views over mailbox.drafts powering the /status "Drafting routes"
+-- card and STAQPRO-235's metric-driven KB nudges.
+CREATE OR REPLACE VIEW mailbox.v_drafting_metrics AS
+SELECT
+  date_trunc('day', d.created_at)::date AS day,
+  d.draft_source,
+  d.classification_category,
+  d.status,
+  COUNT(*)::bigint AS n
+FROM mailbox.drafts d
+WHERE d.created_at IS NOT NULL
+GROUP BY 1, 2, 3, 4;
+
+CREATE OR REPLACE VIEW mailbox.v_override_rate AS
+SELECT
+  d.classification_category,
+  d.draft_source,
+  COUNT(*) FILTER (WHERE d.status = 'edited')::bigint                                  AS edited,
+  COUNT(*) FILTER (WHERE d.status = 'rejected')::bigint                                AS rejected,
+  COUNT(*) FILTER (WHERE d.status IN ('approved','edited','sent'))::bigint             AS approved_like,
+  COUNT(*) FILTER (WHERE d.status IN ('approved','edited','sent','rejected'))::bigint  AS disposed,
+  CASE
+    WHEN COUNT(*) FILTER (WHERE d.status IN ('approved','edited','sent','rejected')) = 0 THEN NULL
+    ELSE (
+      COUNT(*) FILTER (WHERE d.status IN ('edited','rejected'))::numeric
+      / NULLIF(COUNT(*) FILTER (WHERE d.status IN ('approved','edited','sent','rejected')), 0)
+    )
+  END AS edit_reject_rate
+FROM mailbox.drafts d
+WHERE d.created_at > NOW() - INTERVAL '14 days'
+  AND d.classification_category IS NOT NULL
+GROUP BY 1, 2;
 
 --
 -- PostgreSQL database dump complete
