@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { getKysely } from '@/lib/db';
 import { parseParams } from '@/lib/middleware/validate';
 import { getGmailCooldown } from '@/lib/queries-system-state';

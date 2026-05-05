@@ -224,7 +224,7 @@ async function runDraftPass(pair: PairRow, mode: 'with-rag' | 'no-rag'): Promise
   let cosine: number | null = null;
   let status: 'ok' | 'embed_failed' = 'ok';
   let embedError: string | undefined;
-  if (draftBody.trim() && pair.actual_reply && pair.actual_reply.trim()) {
+  if (draftBody.trim() && pair.actual_reply?.trim()) {
     try {
       const [draftVec, actualVec] = await Promise.all([
         embedText(draftBody),

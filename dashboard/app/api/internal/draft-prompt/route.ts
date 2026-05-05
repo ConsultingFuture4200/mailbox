@@ -2,6 +2,7 @@ import { sql } from 'kysely';
 import { type NextRequest, NextResponse } from 'next/server';
 import type { Category } from '@/lib/classification/prompt';
 import { getKysely } from '@/lib/db';
+import { getCategoryExemplars } from '@/lib/drafting/exemplars';
 import { getPersonaContext } from '@/lib/drafting/persona';
 import { assemblePrompt } from '@/lib/drafting/prompt';
 import { pickEndpoint } from '@/lib/drafting/router';
@@ -79,15 +80,24 @@ export async function POST(req: NextRequest) {
     // safe — pickEndpoint is pure and doesn't depend on assembled state.
     const endpoint = pickEndpoint(classification_category, confidence);
 
-    const retrieval = await retrieveForDraft({
-      from_addr: row.from_addr ?? '',
-      subject: row.subject ?? null,
-      body_text: row.body_text ?? null,
-      draft_source: endpoint.source,
-      persona_key: DEFAULT_PERSONA_KEY,
-      // STAQPRO-219 — drop self-match from retrieval via must_not.has_id.
-      message_id: row.message_id,
-    });
+    // STAQPRO-234 — run RAG retrieval and sent_history exemplar mining in
+    // parallel. Both are read-only and independent; the exemplar query runs
+    // entirely in postgres (no Qdrant / no Ollama embed) so it adds <5ms.
+    // Default k=1 keeps the budget at 1 exemplar (~600c) + 2 RAG refs
+    // (~1200c), the same ~450-token augmentation slice as before per
+    // prompt.ts:effectiveRagRefsCap.
+    const [retrieval, exemplars] = await Promise.all([
+      retrieveForDraft({
+        from_addr: row.from_addr ?? '',
+        subject: row.subject ?? null,
+        body_text: row.body_text ?? null,
+        draft_source: endpoint.source,
+        persona_key: DEFAULT_PERSONA_KEY,
+        // STAQPRO-219 — drop self-match from retrieval via must_not.has_id.
+        message_id: row.message_id,
+      }),
+      getCategoryExemplars(classification_category, 1, DEFAULT_PERSONA_KEY),
+    ]);
 
     const assembled = assemblePrompt({
       from_addr: row.from_addr ?? '',
@@ -102,6 +112,14 @@ export async function POST(req: NextRequest) {
       // dropped by structural typing.
       rag_refs: retrieval.refs,
       kb_refs: retrieval.kb_refs,
+      // STAQPRO-234 — past-reply exemplars from sent_history. When the array
+      // is empty (early-onboarding category, sent_history miss), prompt.ts
+      // falls back to today's 3-RAG-ref default — graceful degrade.
+      exemplar_refs: exemplars.map((e) => ({
+        snippet: e.snippet,
+        sent_at: e.sent_at,
+        subject: e.subject,
+      })),
     });
 
     // STAQPRO-191/148 — unconditional writeback. Always persist BOTH refs
@@ -118,12 +136,20 @@ export async function POST(req: NextRequest) {
     // column then (parallel to migration 013).
     const emailRefIds = retrieval.refs.map((r) => r.point_id);
     const kbRefIds = retrieval.kb_refs.map((r) => r.point_id);
+    // STAQPRO-234 — exemplar_refs holds postgres-row pointers (sent_history
+    // message_id strings), NOT Qdrant point UUIDs. They live in their own
+    // jsonb column (migration 020) so the STAQPRO-191/192 RAG-eval surface
+    // (which depends on rag_context_refs being a UUID-only array) stays
+    // pure. Empty array means no exemplar was injected — either k=0
+    // requested or sent_history had no rows for this category yet.
+    const exemplarMessageIds = exemplars.map((e) => e.message_id);
     await db
       .updateTable('drafts')
       .set({
         rag_context_refs: sql`${JSON.stringify(emailRefIds)}::jsonb`,
         rag_retrieval_reason: retrieval.reason,
         kb_context_refs: sql`${JSON.stringify(kbRefIds)}::jsonb`,
+        exemplar_refs: sql`${JSON.stringify(exemplarMessageIds)}::jsonb`,
       })
       .where('id', '=', draft_id)
       .execute();
@@ -151,6 +177,11 @@ export async function POST(req: NextRequest) {
       kb: {
         refs_count: retrieval.kb_refs.length,
         reason: retrieval.kb_reason,
+      },
+      // STAQPRO-234 — exemplar audit signal. Drives the dashboard debug
+      // surface and the "did Phase 1 actually inject anything?" eval check.
+      exemplars: {
+        refs_count: exemplars.length,
       },
     });
   } catch (error) {

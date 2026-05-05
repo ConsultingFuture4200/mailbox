@@ -41,9 +41,7 @@ const BUFFER_MS = 60 * 60 * 1000;
 
 export async function GET(): Promise<NextResponse> {
   const cooldown = await getGmailCooldown();
-  const effectiveUntil = cooldown.until
-    ? new Date(cooldown.until.getTime() + BUFFER_MS)
-    : null;
+  const effectiveUntil = cooldown.until ? new Date(cooldown.until.getTime() + BUFFER_MS) : null;
   const inCooldown = effectiveUntil !== null && effectiveUntil.getTime() > Date.now();
   return NextResponse.json({
     in_cooldown: inCooldown,
