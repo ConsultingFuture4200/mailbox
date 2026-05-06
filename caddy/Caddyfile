@@ -35,7 +35,17 @@
   # handshake. The bypass leaves auth to n8n, same security model as
   # n8n Cloud. The MCP token is per-client, revocable in the n8n UI
   # at Settings > Instance-level MCP > Connected clients.
-  @protected not path /mcp-server/*
+  # Exempt n8n's SPA-polled paths from basic_auth so the editor doesn't
+  # think the backend is offline:
+  #   /mcp-server/* — n8n's MCP server with its own JWT (STAQPRO-203)
+  #   /healthz      — n8n SPA polls this; 401 here triggers a "session
+  #                   expired, please sign in" modal that traps the user
+  #                   in a login loop even after they've signed in
+  #   /assets/*     — n8n's lazy-loaded SPA module bundles. Browser
+  #                   doesn't always carry basic_auth on dynamic imports
+  #                   / preloads, so these 401 from background fetches
+  #                   even when the user is authenticated.
+  @protected not path /mcp-server/* /healthz /assets/*
   basic_auth @protected {
     {env.MAILBOX_BASIC_AUTH_USER} {env.MAILBOX_BASIC_AUTH_HASH}
   }

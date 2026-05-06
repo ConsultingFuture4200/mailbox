@@ -78,6 +78,12 @@ services:
       N8N_PORT: 5678
       N8N_PROTOCOL: https
       N8N_SECURE_COOKIE: 'true'
+      # Disable n8n's anonymous usage telemetry (RudderStack + PostHog).
+      # The SPA otherwise proxies telemetry through /rest/telemetry/* which
+      # gets gated by Caddy basic_auth and floods the browser console with
+      # 401s on every page load. Appliance is single-tenant; no telemetry
+      # value to us, only noise. STAQPRO-237 follow-up.
+      N8N_DIAGNOSTICS_ENABLED: 'false'
       # Caddy fronts n8n with one upstream hop. Without this, n8n's internal
       # express-rate-limit middleware refuses the X-Forwarded-For header
       # (Express trust proxy = false default) and floods logs every webhook
