@@ -275,11 +275,19 @@ Failure semantics: every RAG path returns success-shaped responses on Ollama or 
 | 2026-04-27 ADR (Dashboard Stack Pivot) | Next.js 14 single-service architecture (active); Drizzle-as-MVP-target half **SUPERSEDED 2026-05-01** by Dashboard ORM ADR (Kysely) | Partial — single-service half active, ORM half superseded |
 | 2026-05-01 ADR (Dashboard ORM) | Kysely chosen over Prisma/Drizzle on Jetson hardware grounds + migration-tooling + type-cascade reasoning. Closes STAQPRO-136. | Active |
 
-### Public surface (customer #1, `mailbox.heronlabsinc.com`)
+### Public surface
 
+**Customer #1 — `mailbox.heronlabsinc.com` (M1, `192.168.50.179`):**
 - `https://mailbox.heronlabsinc.com/dashboard/queue` — approval queue (basic_auth gated per STAQPRO-131)
 - `https://mailbox.heronlabsinc.com/` — n8n editor (basic_auth gated)
 - `https://mailbox.heronlabsinc.com/webhook/*` — n8n webhook ingress (basic_auth gated per STAQPRO-161; the dashboard's approve→send loop bypasses Caddy via internal docker DNS at `http://n8n:5678/webhook/mailbox-send`)
+
+**Customer #2 — `mailbox.staqs.io` (M2, `192.168.50.11`, deployed 2026-05-05):**
+- `https://mailbox.staqs.io/dashboard/queue` — approval queue (basic_auth, same gating model as M1)
+- `https://mailbox.staqs.io/` — n8n editor (basic_auth)
+- `https://mailbox.staqs.io/webhook/*` — n8n webhook ingress (basic_auth)
+- TLS via Cloudflare DNS-01, zone owned by Eric@staqs.io's CF account; A record proxied=false (LAN IP).
+- Caddyfile currently hardcodes the M1 hostname and was hand-`sed`'d to `mailbox.staqs.io` for this install — see install plan v0.2 follow-up #6 for the templating fix that needs to land before customer #3.
 
 ### Test coverage
 
@@ -311,23 +319,24 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 <!-- GSD:deployment-start -->
 ## Deployment Target
 
-The appliance is reachable from this workstation via SSH alias `jetson`
-(direct ethernet at `10.42.0.2`, user `bob`). A fallback alias `jetson-wifi`
-points at the LAN IP `192.168.1.45` for use when the direct cable isn't
-available. The Jetson runs the deployed code from `/home/bob/mailbox/` —
+The appliance is reachable from this workstation via SSH alias `mailbox1`
+(tailnet: `mailbox1.tail377a9a.ts.net`, user `bob`). A direct-LAN alias
+`mailbox1-lan` points at `192.168.50.179` for use when the tailnet path
+isn't preferred. The Jetson runs the deployed code from `/home/bob/mailbox/` —
 same git remote as this local clone.
 
-The direct ethernet link uses an isolated `10.42.0.0/24` subnet (workstation
-`10.42.0.1`, Jetson `10.42.0.2`) and provides ~0.5ms RTT vs Wi-Fi's typical
-5-30ms. Configured statically via NetworkManager profiles ("jetson-direct"
-on the workstation, "Wired connection 1" on the Jetson).
+A legacy isolated `10.42.0.0/24` direct-ethernet path remains configured
+via NetworkManager profiles ("jetson-direct" on the workstation, "Wired
+connection 1" on the Jetson) at workstation `10.42.0.1` / Jetson `10.42.0.2`,
+providing ~0.5ms RTT vs the router LAN's typical 1-5ms. Currently inactive —
+the appliance has been on the router LAN since the bring-up move.
 
 ### Reading appliance state
 
-- Container status: `ssh jetson 'cd ~/mailbox && docker compose ps'`
-- Service logs: `ssh jetson 'docker logs <service> --tail 50'`
-- Live config: `ssh jetson 'cat /home/bob/mailbox/<path>'`
-- Health probes: `ssh jetson 'docker compose -f ~/mailbox/docker-compose.yml exec <svc> <cmd>'`
+- Container status: `ssh mailbox1 'cd ~/mailbox && docker compose ps'`
+- Service logs: `ssh mailbox1 'docker logs <service> --tail 50'`
+- Live config: `ssh mailbox1 'cat /home/bob/mailbox/<path>'`
+- Health probes: `ssh mailbox1 'docker compose -f ~/mailbox/docker-compose.yml exec <svc> <cmd>'`
 
 ### Deploy flow
 
@@ -337,22 +346,27 @@ This local clone is the source of truth. Edit here, commit, push, then on the Je
     git add . && git commit -m "..." && git push origin master
 
     # Apply on the Jetson (one-liner from this workstation)
-    ssh jetson 'cd ~/mailbox && git pull && docker compose up -d --build --remove-orphans'
+    ssh mailbox1 'cd ~/mailbox && git pull && docker compose up -d --build --remove-orphans'
 
 **Always pass `--remove-orphans`** on full-stack `up` calls. When a service is removed from `docker-compose.yml` (e.g., the ttyd removal in STAQPRO-182), the running container becomes an orphan and keeps its host port binding — `--remove-orphans` cleans it up automatically. Without it, you'll see `docker compose down <service>` return "no such service" while the container is still listening.
 
 For Caddy-only or config-only changes (no rebuild), restart the container:
 
-    ssh jetson 'cd ~/mailbox && git pull && docker compose restart caddy'
+    ssh mailbox1 'cd ~/mailbox && git pull && docker compose restart caddy'
 
 Don't use `docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile` — STAQPRO-161 deploy hit a case where the admin-API reload reported "config is unchanged" and kept the old config loaded even though the bind-mounted Caddyfile on the host had the new content. Full container restart re-reads the bind mount cleanly. Cost is ~1s of dropped connections vs the silent stale-config trap.
 
 ### Public surface
 
+**M1 (`192.168.50.179`, customer #1):**
 - Dashboard: `https://mailbox.heronlabsinc.com/dashboard/queue`
-- n8n editor: behind LAN-only access at `http://192.168.1.45:5678`
-- Ollama API: `http://192.168.1.45:11434` (LAN only)
-- Qdrant: `http://192.168.1.45:6333` (LAN only)
+- n8n editor: LAN-only at `http://192.168.50.179:5678` (was `192.168.1.45:5678` pre-router-LAN move; old IP referenced in older docs)
+- Ollama API: `http://192.168.50.179:11434` (LAN only)
+- Qdrant: `http://192.168.50.179:6333` (LAN only)
+
+**M2 (`192.168.50.11`, customer #2, deployed 2026-05-05):**
+- Dashboard: `https://mailbox.staqs.io/dashboard/queue`
+- **No host port bindings for ollama / n8n / qdrant** — M2's `docker-compose.yml` omits the `ports:` block on those services, so they're docker-network-only. To probe from the workstation, either `ssh mailbox2 'docker exec mailbox-dashboard wget -qO- http://ollama:11434/api/tags'` or open an SSH tunnel: `ssh -L 5678:localhost:5678 mailbox2`. This is the safer default and should be backported to M1.
 
 ### Post-n8n-upgrade verification
 
@@ -366,7 +380,7 @@ was caught.
 
 Verification one-liner — run after every n8n change:
 
-    ssh jetson-tailscale "docker exec mailbox-postgres-1 psql \
+    ssh mailbox1 "docker exec mailbox-postgres-1 psql \
       -U \$(grep ^POSTGRES_USER /home/bob/mailbox/.env | cut -d= -f2-) \
       -d \$(grep ^POSTGRES_DB /home/bob/mailbox/.env | cut -d= -f2-) \
       -c \"SELECT name, active FROM workflow_entity WHERE name LIKE 'MailBOX%' ORDER BY name;\""
@@ -379,10 +393,10 @@ older than 15 min. Use the Stat as the always-on guardrail; use the psql
 one-liner as the deploy gate.
 
 Activation runbook (post-import): toggle Active on each sub-workflow in the
-n8n editor (`http://mailbox-jetson-01:5678`), or via CLI:
+n8n editor (`http://mailbox1:5678`), or via CLI:
 
-    ssh jetson-tailscale "docker exec mailbox-n8n-1 n8n update:workflow --active=true --id=<id>"
-    ssh jetson-tailscale "cd /home/bob/mailbox && docker compose restart n8n"
+    ssh mailbox1 "docker exec mailbox-n8n-1 n8n update:workflow --active=true --id=<id>"
+    ssh mailbox1 "cd /home/bob/mailbox && docker compose restart n8n"
 
 The CLI flag is a no-op at runtime without the restart (n8n caches
 activation state in memory).
@@ -390,42 +404,48 @@ activation state in memory).
 ### Tailscale access
 
 Both Jetsons live on the shared `consultingfutures@gmail.com` tailnet
-(MagicDNS suffix `tail377a9a.ts.net`). Two SSH aliases in `~/.ssh/config`:
+(MagicDNS suffix `tail377a9a.ts.net`) and on the same router LAN
+(`192.168.50.0/24`). SSH aliases in `~/.ssh/config`:
 
-| Alias              | Tailnet host                            | IPv4           | Box                                   |
-|--------------------|-----------------------------------------|----------------|---------------------------------------|
-| `jetson-tailscale` | `mailbox-jetson-01.tail377a9a.ts.net`   | `100.65.9.2`   | Local Jetson (alternative to `10.42.0.2` direct ethernet) |
-| `jetson-dustin`    | `bob-tb250-btc.tail377a9a.ts.net`       | `100.65.26.125`| Dustin's Jetson                       |
+| Alias          | Tailnet host                  | Tailnet IP       | LAN IP           | Local user | Repo path                |
+|----------------|-------------------------------|------------------|------------------|------------|--------------------------|
+| `mailbox1`     | `mailbox1.tail377a9a.ts.net`  | `100.65.9.2`     | `192.168.50.179` | `bob`      | `/home/bob/mailbox/`     |
+| `mailbox2`     | `mailbox2.tail377a9a.ts.net`  | `100.120.102.45` | `192.168.50.11`  | `mailbox`  | `/home/mailbox/mailbox/` |
 
-Both run as user `bob` with identical `/home/bob/mailbox/` layout, so every
-command in "Reading appliance state" / "Deploy flow" works against either by
-swapping the alias.
+`mailbox1-lan` and `mailbox2-lan` aliases point at the LAN IPs directly for
+when the tailnet path isn't preferred. mailbox2 uses Tailscale SSH (banner
+`SSH-2.0-Tailscale`), gated by the tailnet ACL — `consultingfutures@gmail.com`
+is permitted to SSH `tag:mailbox` machines as `bob`, `mailbox`, `mailbox2`,
+`root`. Identity-based; no `authorized_keys` needed on mailbox2.
 
-LAN-only services on his box are reachable via the tailnet hostname
+The two boxes are **not** identical-layout: user and repo path differ
+(`bob` / `/home/bob/mailbox/` vs `mailbox` / `/home/mailbox/mailbox/`). Use
+`~/mailbox/` rather than a hardcoded path in cross-box commands.
+
+LAN-only services on mailbox2 are reachable via the tailnet hostname
 (provided the compose port bindings are `0.0.0.0`, not `127.0.0.1`):
 
-- Dashboard direct: `http://bob-tb250-btc.tail377a9a.ts.net:3001/dashboard/queue`
-- n8n editor: `http://bob-tb250-btc.tail377a9a.ts.net:5678`
-- Ollama API: `http://bob-tb250-btc.tail377a9a.ts.net:11434`
-- Qdrant: `http://bob-tb250-btc.tail377a9a.ts.net:6333`
+- Dashboard direct: `http://mailbox2.tail377a9a.ts.net:3001/dashboard/queue`
+- n8n editor: `http://mailbox2.tail377a9a.ts.net:5678`
+- Ollama API: `http://mailbox2.tail377a9a.ts.net:11434`
+- Qdrant: `http://mailbox2.tail377a9a.ts.net:6333`
 
 Fallback if a port is bound to localhost only:
 
-    ssh -L 5678:localhost:5678 jetson-dustin
+    ssh -L 5678:localhost:5678 mailbox2
 
-#### "Connection refused" on `ssh jetson-dustin`
+#### Hardware deltas (mailbox1 vs mailbox2)
 
-If `tailscale ping bob-tb250-btc` succeeds but `ssh` returns connection
-refused, the tailnet is fine — sshd is the problem. Have Dustin run on his
-Jetson:
+Both are NVIDIA Jetson Orin Nano Engineering Reference Developer Kit Super,
+JetPack 6.2 / L4T R36 rev 5.0 (build 2026-01-16, GCID 43688277), kernel
+5.15.185-tegra, 8 GB unified RAM, MAXN_SUPER (mode 2). Real differences:
 
-    sudo systemctl enable --now ssh
-    sudo systemctl status ssh
-
-Or enable Tailscale SSH (no key copy needed, ACL-gated):
-
-    sudo tailscale up --ssh
-
-Then add this workstation's `~/.ssh/id_ed25519.pub` to
-`/home/bob/.ssh/authorized_keys` on his box (or rely on Tailscale SSH).
+- **NVMe**: mailbox1 = SPCC M.2 PCIe SSD 953.9 GB; mailbox2 = Kingston
+  SNV3S1000G 931.5 GB. Both DRAM-less consumer drives — fine for current
+  workload, but worth re-benchmarking if RAG ingest or Postgres WAL ever
+  becomes write-bound.
+- **Ethernet PHY OUI**: mailbox1 `4c:bb:47` (NVIDIA), mailbox2 `3c:6d:66`
+  (ASUSTek). Two valid Orin Nano Super dev kit revisions — the OUI alone
+  is not a Jetson/non-Jetson signal.
+- **Docker**: trivial patch drift (29.4.0 vs 29.4.2, both via JetsonHacks).
 <!-- GSD:deployment-end -->
