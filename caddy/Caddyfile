@@ -1,4 +1,11 @@
-mailbox.heronlabsinc.com {
+{
+  # Let's Encrypt account email — used for cert expiry warnings.
+  # STAQPRO-237: hoisted to global so the per-site tls block stays focused
+  # on the DNS-01 challenge config.
+  email {$CADDY_EMAIL}
+}
+
+{$DOMAIN} {
   tls {
     dns cloudflare {env.CLOUDFLARE_API_TOKEN}
   }

@@ -107,6 +107,8 @@ services:
     - caddy_data:/data
     - caddy_config:/config
     environment:
+      DOMAIN: ${DOMAIN}
+      CADDY_EMAIL: ${CADDY_EMAIL}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
       MAILBOX_BASIC_AUTH_USER: ${MAILBOX_BASIC_AUTH_USER}
       MAILBOX_BASIC_AUTH_HASH: ${MAILBOX_BASIC_AUTH_HASH}
