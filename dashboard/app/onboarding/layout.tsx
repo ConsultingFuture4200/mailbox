@@ -44,7 +44,7 @@ export default async function OnboardingLayout({ children }: { children: ReactNo
             This appliance is live. Open the queue to review pending drafts.
           </p>
           <Link
-            href="/dashboard/queue"
+            href="/queue"
             className="mt-4 inline-block rounded-lg bg-orange-500 px-4 py-2 text-sm font-semibold text-neutral-950 hover:bg-orange-400"
           >
             Go to queue

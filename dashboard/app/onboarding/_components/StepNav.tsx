@@ -38,7 +38,7 @@ export function StepNav({ slug }: StepNavProps) {
     // queue. For all other steps we go to the next wizard slug.
     const targetSlug = next ?? 'complete';
     const to = dbStageForSlug(targetSlug);
-    const landing = isLast ? '/dashboard/queue' : `/onboarding/${targetSlug}`;
+    const landing = isLast ? '/queue' : `/onboarding/${targetSlug}`;
 
     // Same-DB-stage UX-only sub-step: skip the API call (no transition row
     // exists for stage→stage in ALLOWED_TRANSITIONS, so the route would 409
