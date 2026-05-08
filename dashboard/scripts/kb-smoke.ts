@@ -45,8 +45,12 @@ import {
 } from '@/lib/rag/kb-ingest';
 import { deleteKbPointsByDocId, searchKb } from '@/lib/rag/kb-qdrant';
 
-// Small embedded SOP fixture — real-shaped: paragraphs, headings, the kind of
-// content a CPG founder might upload. ~1.5KB so it produces 1-2 chunks.
+// Small embedded SOP fixture — real-shaped: paragraphs, headings, the kind
+// of content an operator might upload (this one is a Heron Labs returns
+// policy from the customer-#1 corpus, kept as historical test data; the
+// product is industry-agnostic per the 2026-05-08 CPG-scrub but the
+// fixture content is preserved for test stability). ~1.5KB so it produces
+// 1-2 chunks.
 const FIXTURE_TEXT = `# Returns Policy
 
 Heron Labs accepts returns within 30 days of delivery for any product

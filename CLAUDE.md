@@ -3,9 +3,11 @@
 
 **MailBox One — Email Agent Appliance**
 
-A dedicated hardware appliance (Jetson Orin Nano Super) that runs an AI email agent for small CPG brand operators. The customer plugs in a box, connects their email, completes guided onboarding, and gets an always-on assistant that triages, drafts, and (with approval) sends email responses on their behalf. Sold as a managed product with white-glove onboarding and optional support subscription.
+A dedicated hardware appliance (Jetson Orin Nano Super) that runs an AI email agent for small business operators. The customer plugs in a box, connects their email, completes guided onboarding (which captures their industry / business description so the classifier and drafter speak in their context), and gets an always-on assistant that triages, drafts, and (with approval) sends email responses on their behalf. Sold as a managed product with white-glove onboarding and optional support subscription.
 
-**Core Value:** Inbound operational email for small CPG brands gets triaged, drafted, and (with human approval) sent — without the founder spending 1-3 hours/day on email.
+Customer #1 was a small-batch CPG operator (Heron Labs); customer #2 is a B2B tech / dev-tools company (Staqs). The product is industry-agnostic at the prompt layer per the 2026-05-08 CPG-scrub — `business_description` is a per-appliance persona override populated during onboarding, not a hardcoded vertical (see `dashboard/lib/drafting/persona.ts` `PersonaContext`).
+
+**Core Value:** Inbound operational email gets triaged, drafted, and (with human approval) sent — without the operator spending 1-3 hours/day on email. Tuned per-customer via persona overrides; no vertical lock-in.
 
 ### Constraints
 

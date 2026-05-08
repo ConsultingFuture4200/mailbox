@@ -2,10 +2,19 @@
 
 ```yaml
 target_length: ~6 minutes
-audience: small CPG operator, non-technical
+audience: small business operator, non-technical (originally scoped for CPG; v0.2 will rephrase for industry-agnostic positioning post 2026-05-08 CPG-scrub)
 tone: warm, calm, no jargon
 record_after: STAQPRO-152 wizard ships + screenshots captured
 ```
+
+> **Industry-vertical note (2026-05-08):** v0.1.0 of this script was outlined
+> with a CPG-operator audience in mind (customer #1 was Heron Labs). Customer
+> #2 (Staqs.io) is B2B tech / dev tools, and the product is now industry-
+> agnostic at the prompt layer. v0.2 of this outline should rephrase any
+> CPG-specific examples (gummy MOQs, PO references, etc.) to be industry-
+> agnostic, OR present multiple vertical-specific takes the operator can
+> select from during recording. Defer until 02-08 onboarding wizard finish
+> defines the persona-capture step the script needs to walk through.
 
 > First-pass outline. Each step section mirrors the per-step `.md` template (`docs/customer-onboarding/NN-*.md`). Voiceover lines are placeholders to be tightened against the wizard's `intent` text and the per-step `## Voiceover beats` blocks before recording.
 

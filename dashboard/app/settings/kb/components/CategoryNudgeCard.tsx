@@ -36,8 +36,9 @@ interface CategoryNudgeCardProps {
 }
 
 function categoryHumanLabel(category: string): string {
-  // CPG operator-friendly labels for the eight enum values. Falls back to
-  // the raw value if a new category is added before this is updated.
+  // Operator-friendly labels for the eight enum values. Industry-agnostic
+  // since the 2026-05-08 CPG-scrub. Falls back to the raw value if a new
+  // category is added before this is updated.
   switch (category) {
     case 'reorder':
       return 'reorder';

@@ -8,6 +8,18 @@
 > **Status:** Draft — awaiting NEEDS_CLARIFICATION resolution
 > **Product type:** Hardware + software appliance sold as a managed product
 > **Changelog:** v1.1 — Added §7.5.1 Relationship Graph Layer, amended §7.4 context routing, amended Phase 2 deliverables
+>
+> **⚠ Industry-vertical note (added 2026-05-08, post-customer-#2 deploy):** This
+> PRD captures the original 2026-Q1 vision targeting small CPG brand operators
+> as the launch vertical. The live product is **industry-agnostic at the
+> prompt layer** per the 2026-05-08 CPG-scrub — `business_description` is a
+> per-appliance persona override populated during onboarding (see
+> `dashboard/lib/drafting/persona.ts` `PersonaContext`), not a hardcoded
+> vertical. Customer #1 (Heron Labs) is CPG; customer #2 (Staqs.io) is B2B
+> tech / dev tools. Treat any "CPG" / "small CPG brand" reference below as
+> historical context; the runtime classifies and drafts in whatever industry
+> the operator's persona override says. CLAUDE.md "Project" section is the
+> current product positioning.
 
 ---
 

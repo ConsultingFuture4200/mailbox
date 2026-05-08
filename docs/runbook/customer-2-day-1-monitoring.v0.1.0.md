@@ -103,7 +103,7 @@ Healthy distribution per the live state machine in root `CLAUDE.md`:
 
 Replay path on stuck `awaiting_cloud`: hit the dashboard `/api/drafts/[id]/retry` endpoint (logged-in operator) — does NOT roll back state on transport failure per REQUIREMENTS API-03.
 
-### 4. Classification accuracy (spot check — Risk: <85% on niche CPG vocab)
+### 4. Classification accuracy (spot check — Risk: <85% on the customer's industry vocabulary; tuned via persona `business_description` per the 2026-05-08 CPG-scrub)
 
 ```sh
 ssh jetson-customer2 'docker exec mailbox-postgres-1 psql -U mailbox -d mailbox -c "
