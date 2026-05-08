@@ -191,6 +191,26 @@ Per migration 007 (the first migration to land the standard): every migration fi
 ### `.env` escaping
 Bcrypt hashes (used by Caddy `basic_auth` for `MAILBOX_BASIC_AUTH_HASH`) contain literal `$` characters. Docker Compose treats `$` as variable expansion and silently truncates values at the `$`. **Escape every `$` to `$$` in `.env`** or your hash will be empty inside the container. This bit us on the first Caddy deploy.
 
+### Caddy basic_auth rotation gotchas (2026-05-08)
+Two footguns when rotating dashboard basic_auth credentials:
+
+1. **`caddy hash-password` requires `--plaintext` for non-interactive use.** Without a TTY it expects to prompt twice for confirmation, so piping (`echo -n "$PASS" | docker exec -i mailbox-caddy-1 caddy hash-password`) returns empty. Use `docker exec mailbox-caddy-1 caddy hash-password --plaintext "$PASS"` instead — yes the password is in argv on the host briefly, accept that for a single-user appliance.
+2. **`docker compose restart caddy` does NOT pick up `.env` changes** — `restart` is stop/start of the existing container with its baked-in env. To apply env-var changes you must `docker compose up -d caddy` (which recreates the container if env or compose changed). The "Deploy flow" section's `restart caddy` instruction is correct for Caddyfile-only changes (bind-mounted, re-read on restart) but **wrong for `.env` changes**. Confirm via `docker exec mailbox-caddy-1 sh -c 'echo ${MAILBOX_BASIC_AUTH_HASH:0:10}'` — if the prefix doesn't match what's in `.env` (after `$$`-unescaping), the container hasn't been recreated.
+
+Rotation flow that works:
+
+    NEW_PASS=$(openssl rand -base64 32 | tr -dc 'A-Za-z0-9' | head -c 28)
+    HASH=$(ssh mailbox1 "docker exec mailbox-caddy-1 caddy hash-password --plaintext '$NEW_PASS'")
+    ESCAPED=$(echo "$HASH" | sed 's/\$/\$\$/g')
+    ssh mailbox1 "cd ~/mailbox && cp .env .env.bak-rotate-\$(date +%Y%m%d-%H%M%S) && \
+      sed -i 's|^MAILBOX_BASIC_AUTH_HASH=.*|MAILBOX_BASIC_AUTH_HASH=$ESCAPED|' .env && \
+      docker compose up -d caddy"
+    # verify with the LAN IP because public DNS may be stale (STAQPRO-238)
+    curl -sk -o /dev/null -w '%{http_code}\n' --resolve mailbox.heronlabsinc.com:443:192.168.50.179 \
+      -u "admin:$NEW_PASS" https://mailbox.heronlabsinc.com/dashboard/queue
+
+Then store the new plaintext in 1Password (see "Credentials" below).
+
 ### n8n workflow editing
 - **All four MailBOX workflows must be `active=true` on n8n 2.x.** `MailBOX` (parent, ScheduleTrigger), `MailBOX-Classify`, `MailBOX-Draft`, `MailBOX-Send` (sub-workflows invoked via `executeWorkflowTrigger`). The pre-2.x guidance — that sub-workflows should stay `active=false` to avoid cosmetic "could not activate" warnings — was retracted in n8n 2.x: now an `executeWorkflow` call to an inactive sub-workflow throws *"Workflow is not active and cannot be executed"* and dark-classifies the inbox until caught (STAQPRO-181 hit this for ~12h on M2 post-2.14.2 upgrade). The post-n8n-upgrade verification one-liner in **Deployment Target → Post-n8n-upgrade verification** is the canonical guardrail. The dashboard CLAUDE.md's STAQPRO-186 boundary contract still mentions the pre-2.x guidance — treat that as historical, the n8n 2.x reality is "all four active."
 - `n8n update:workflow --active=...` is a NO-OP at runtime unless the n8n container is restarted. The flag persists to the DB but the live runtime keeps the old activation state cached.
@@ -352,11 +372,32 @@ This local clone is the source of truth. Edit here, commit, push, then on the Je
 
 **Always pass `--remove-orphans`** on full-stack `up` calls. When a service is removed from `docker-compose.yml` (e.g., the ttyd removal in STAQPRO-182), the running container becomes an orphan and keeps its host port binding — `--remove-orphans` cleans it up automatically. Without it, you'll see `docker compose down <service>` return "no such service" while the container is still listening.
 
-For Caddy-only or config-only changes (no rebuild), restart the container:
+For **Caddyfile** changes (bind-mounted, no rebuild), restart the container:
 
     ssh mailbox1 'cd ~/mailbox && git pull && docker compose restart caddy'
 
+For **`.env` changes** that drive Caddy env vars (`MAILBOX_BASIC_AUTH_HASH`, `MAILBOX_BASIC_AUTH_USER`, etc.), use `up -d` instead — `restart` reuses the container's baked-in env and silently keeps stale values:
+
+    ssh mailbox1 'cd ~/mailbox && docker compose up -d caddy'
+
+(See **Conventions → Caddy basic_auth rotation gotchas** for full rotation flow including the `caddy hash-password --plaintext` requirement.)
+
 Don't use `docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile` — STAQPRO-161 deploy hit a case where the admin-API reload reported "config is unchanged" and kept the old config loaded even though the bind-mounted Caddyfile on the host had the new content. Full container restart re-reads the bind mount cleanly. Cost is ~1s of dropped connections vs the silent stale-config trap.
+
+### Credentials — 1Password (MailBOX vault)
+
+Operator-side credentials for both appliances live in the **1Password "MailBOX" vault** under `dustin@umbadvisors.com`'s account. Single source of truth; never paste these into commits, Linear, or chat history.
+
+| Item | Vault | Purpose | Notes |
+|---|---|---|---|
+| `mailbox.heronlabsinc.com` | MailBOX | M1 dashboard sign-in (Caddy basic_auth) | username `admin`, URL `https://mailbox.heronlabsinc.com/dashboard/queue` |
+| `mailbox.staqs.io` | MailBOX | M2 dashboard sign-in (Caddy basic_auth) | username `admin`, URL `https://mailbox.staqs.io/dashboard/queue` |
+| `mailbox1` | MailBOX | M1 SSH user + appliance Postgres password | SSH user `bob` (use the `mailbox1` ssh alias / Tailscale identity-based auth — no password needed for SSH itself); the Postgres password matches `POSTGRES_PASSWORD` in M1's `.env` |
+| `mailbox2` | MailBOX | M2 SSH user + appliance Postgres password | Same shape as `mailbox1`. M2's SSH path is Tailscale-ACL-gated; no `authorized_keys` on M2. |
+
+Retrieve from CLI: `op item get 'mailbox.heronlabsinc.com' --vault MailBOX --reveal`. After basic_auth rotation (rotation flow above), update the corresponding 1P item with `op item edit '<title>' --vault MailBOX password='<new-plaintext>'` — don't create a new item, edit the existing one so URLs/tags persist.
+
+Customer-side: when the appliance is operated by someone other than Dustin (Heron Labs operator, Staqs operator), share the relevant 1Password item to that person's 1Password account rather than emailing the password.
 
 ### Public surface
 
