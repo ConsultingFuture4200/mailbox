@@ -169,6 +169,12 @@ Send-side failures no longer flip status — Gmail Reply errors leave the row at
 ### `inbox_messages` denormalization
 `mailbox.inbox_messages` carries its own `classification`, `confidence`, `classified_at`, `model`, `draft_id` columns alongside the per-draft state in `mailbox.drafts`. Treat `inbox_messages` as the message-level snapshot of the latest classification + currently linked draft. `mailbox.classification_log` is the append-only history.
 
+**Sync mechanism (STAQPRO-244, migration 021, 2026-05-08)**: the n8n workflow JSON does NOT write these columns directly — until 2026-05-08 they were dead schema (only 10 of 951 rows on M1 had values, all from a one-shot manual backfill). Two `AFTER INSERT` Postgres triggers in the `mailbox` schema now keep them in sync:
+- `trg_sync_inbox_from_classification_log` on `mailbox.classification_log` updates `classification` / `confidence` / `classified_at` / `model` (latest log row wins on re-classification)
+- `trg_sync_inbox_draft_id` on `mailbox.drafts` sets `inbox_messages.draft_id` to the most recent draft's id
+
+`mailbox.classification_log` remains the source of truth — if `inbox_messages.classification` ever drifts (e.g., a manual UPDATE bypasses the trigger via DISABLE), replay with the backfill query in migration 021. The `Classify lag` health stat in `dashboard/lib/queries-system.ts` reads from `classification_log` via LEFT JOIN, not from the denormalized columns, so it's unaffected by drift.
+
 ### `rag_context_refs` field semantics (STAQPRO-191 / STAQPRO-192)
 `mailbox.drafts.rag_context_refs` and `mailbox.sent_history.rag_context_refs` are both `jsonb DEFAULT '[]'::jsonb`. They store a JSON array of Qdrant point UUIDs (RFC 4122 v4) that were retrieved to augment the draft prompt at draft-assembly time. Empty array `[]` means one of: retrieval was gated (`cloud_gated`), upstream unavailable (`embed_unavailable`, `qdrant_unavailable`), or the counterparty had no prior history (`no_hits`).
 
