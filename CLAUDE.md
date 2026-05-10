@@ -364,6 +364,12 @@ Do not make direct repo edits outside a GSD workflow unless the user explicitly 
 > This section is managed by `generate-claude-profile` -- do not edit manually.
 <!-- GSD:profile-end -->
 
+## Related Repositories
+
+Sibling repos that aren't part of the appliance build but inform development:
+
+- **`~/mailbox-queue-sandbox/`** — UI/UX design sandbox for the dashboard. Vite + React 19 + Tailwind v4, runs at `http://localhost:5173/` via `pnpm dev`. Fixtures pulled from real M1 production data (real sender addresses + bodies) — **local-only git repo, not pushed**. Use it to prototype dashboard UI before porting to `dashboard/` (Next.js production). Design decisions made here propagate back; fixtures stay redacted/local.
+
 <!-- GSD:deployment-start -->
 ## Deployment Target
 
