@@ -102,6 +102,18 @@ Per-pair status will be `judge_only` (not `ok`) and `cosine` will be null.
 - `--limit all` — score every backfilled pair.
 - `--limit N` — first N pairs ordered by `sent_at ASC`. `--limit 10` is the canonical smoke run (~1 min cosine-only, ~2-3 min cosine+haiku).
 
+### Rate limiting the judge (STAQPRO-224)
+
+`JUDGE_RATE_LIMIT_MS` env var spaces judge calls so a full 441-pair run doesn't burst into Anthropic's 50 RPM standard-tier ceiling:
+
+| Value | When to use |
+|---|---|
+| `500` (default) | Cosine + Haiku full runs. ~120 RPM theoretical / ~60 RPM after serialized latency. Comfortably under Anthropic standard-tier. |
+| `0` | Fast smoke (`--limit 5`) and `gpt-oss` runs (Ollama Cloud has no per-call rate cap that this matters for). |
+| `1000+` | Sustained `judge_rate_limited > 0` in stdout summary — raise until the count goes to zero on a 50-pair pilot. |
+
+Pass via `-e JUDGE_RATE_LIMIT_MS=<n>` on the compose-run line (same shape as `ANTHROPIC_API_KEY`). The harness echoes the active pacing at run start. No effect on cosine-only runs.
+
 ### Output
 
 Each run writes one JSON file. Filenames now include a judge suffix when judge was enabled:
@@ -118,7 +130,7 @@ Stdout summary now lists both metric blocks when judge was enabled:
 
 ```
 RAG eval — mode=with-rag model=qwen3:4b-ctx4k
-pairs: 441 (requested all)  ok=435 draft_failed=2 embed_failed=4 error=0 judge_only=0 judge_failed=3
+pairs: 441 (requested all)  ok=435 draft_failed=2 embed_failed=4 error=0 judge_only=0 judge_failed=3 judge_rate_limited=0
 
 Global cosine similarity:
   count=435  mean=0.7087  median=0.7102  p25=0.6526  p75=0.7684  min=0.4613  max=0.9435
@@ -207,6 +219,33 @@ This is small enough that the operator running the judge across both passes shou
 
 ---
 
+## Known confounds (STAQPRO-223)
+
+Before reading any judge number, internalize the limits of what the judge can actually score.
+
+### `factual_alignment` is contaminated — read it as draft-vs-reply overlap, NOT hallucination
+
+The judge prompt contains both the candidate DRAFT and the operator's ACTUAL REPLY (see §"Judge prompt" above — this is the design, not a bug). When the judge scores `factual_alignment` ("does the draft preserve the reply's facts"), it can trivially achieve a high score by checking whether the draft's text overlaps the reply, not whether the draft's claims are independently true.
+
+In practice this means:
+
+- A draft that **word-copies** the actual reply scores `factual_alignment=3` even if both are wrong.
+- A draft that **paraphrases correctly** with different surface words scores lower than the copy-paste version, despite being equally factual.
+- Under with-RAG vs no-RAG, **retrieval that pulls the actual reply text into context** (possible — STAQPRO-190 backfilled outbound history into Qdrant) inflates `factual_alignment` for the with-RAG arm by feeding the drafter the answer.
+
+**Operational implication.** Do NOT cite `factual_alignment` deltas as evidence for "RAG reduces hallucinations" until the axis is redesigned (likely a two-pass judge that scores facts without seeing the reply — out of scope here). Conclusions about hallucination drawn from this axis carry an explicit caveat. The other two axes are not similarly contaminated:
+
+- `voice_match` — judges style/tone, doesn't require fact-grounding.
+- `length_appropriateness` — judges proportion, doesn't require fact-grounding.
+
+These two should carry the weight when reading a Phase-D hypothesis-test result. `factual_alignment` is a "draft-vs-reply overlap" indicator until the redesign lands.
+
+### `voice_match` does not separate "operator-style" from "operator-historical-words"
+
+A lower-confidence confound. If retrieval pulls the operator's prior responses (which is the whole point of STAQPRO-190 outbound ingestion), the drafter can mimic surface phrasing that the judge then rewards as `voice_match=3`. This is *probably* what we want for production drafting, but it means `voice_match` rewards "uses the operator's word choices" rather than "captures the operator's manner of speaking." Useful signal either way; don't over-read.
+
+---
+
 ## Interpreting the numbers
 
 ### Cosine — unchanged from v0.2.0
@@ -237,7 +276,10 @@ Calibration intentionally not done (issue's out-of-scope guardrail). Track both 
 
 ### Per-pair drift signals
 
-`status_counts.judge_failed` is the new red flag. If it's > 5% of pairs, something is wrong — likely API key, rate limit, or a model regression that's emitting un-parseable output. Inspect the `per_pair[].judge_error` and `judge_status='parse_failed'` entries' `raw` field for ground truth.
+`status_counts.judge_failed` is the union red flag — if it's > 5% of pairs, something is wrong. Read it together with `judge_rate_limited` (STAQPRO-224) to disambiguate:
+
+- `judge_failed - judge_rate_limited ≈ 0` → the only issue is 429s. Raise `JUDGE_RATE_LIMIT_MS` or rerun at lower `--limit`. The eval is otherwise healthy.
+- `judge_failed - judge_rate_limited > 0` → "real" call/parse failures. Inspect `per_pair[].judge_error` (and `judge_status='parse_failed'` entries' `raw` field) for ground truth — likely API key, model regression, or un-parseable output.
 
 Cosine drift signals (`status_counts.draft_failed`, `embed_failed`) are unchanged from v0.2.0.
 
@@ -281,7 +323,7 @@ New for v0.3.0:
 |---|---|---|
 | Every pair `judge_status=call_failed` with "ANTHROPIC_API_KEY not set" | Env didn't propagate | Add `-e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY` to the `docker compose run` line |
 | Every pair `judge_status=call_failed` with HTTP 401 | Stale or rotated key | Verify `ANTHROPIC_API_KEY` against the live Anthropic console; rotate via the project's secret manager |
-| Every pair `judge_status=call_failed` with HTTP 429 | Rate limit | Re-run with `--limit 50` to read variance, or insert a `sleep 1` between pairs (out-of-scope addition — file an issue if needed) |
+| Many pairs `judge_status=rate_limited` (HTTP 429) | Anthropic / Ollama Cloud throttling (STAQPRO-224) | Default `JUDGE_RATE_LIMIT_MS=500` is on; raise to `1000` for sustained `judge_rate_limited > 0`, or rerun with `--limit 100`. Distinct from `call_failed` in `status_counts` — `judge_failed` is the union, `judge_rate_limited` is the 429-only subset. |
 | A few pairs `judge_status=parse_failed` | Model emitted non-JSON commentary | Inspect `judge_error` + `raw` in the per-pair JSON; if the rate is < 5%, ignore (judge_failed is filtered out of aggregates by design) |
 | `judge-only` mode produces all `cosine=null` | Expected — that's what `--judge-only` does | Look at `judge_aggregates_global` instead of `aggregates_global` |
 | Output filename has no judge suffix despite passing `--judge=haiku` | Flag was passed before `--` separator | `npm run eval:rag -- --judge=haiku` (note the `--`) |

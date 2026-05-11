@@ -185,8 +185,14 @@ export interface RagEvalReport {
   // empty completions because they have no anchor).
   // `judge_failed` (STAQPRO-220) counts pairs where the judge call or parse
   // failed — judge outages should not poison the cosine aggregate.
+  // `judge_rate_limited` (STAQPRO-224) is a strict subset of judge_failed —
+  // pairs where the judge returned HTTP 429. Split out so the operator can
+  // distinguish "Anthropic throttled us" (rerun at lower --limit or raise
+  // JUDGE_RATE_LIMIT_MS) from "judge call is structurally broken" (key
+  // missing, malformed response, etc).
   status_counts: Record<PerPairScore['status'], number> & {
     judge_failed: number;
+    judge_rate_limited: number;
   };
 }
 
@@ -290,6 +296,7 @@ export function buildReport(args: {
     error: 0,
     judge_only: 0,
     judge_failed: 0,
+    judge_rate_limited: 0,
   };
   for (const p of per_pair) {
     status_counts[p.status] += 1;
@@ -297,6 +304,10 @@ export function buildReport(args: {
     // judge attempt produced anything other than `ok`. Pairs without any
     // judge attempt (cosine-only run) are not counted.
     if (p.judge_status && p.judge_status !== 'ok') status_counts.judge_failed += 1;
+    // STAQPRO-224 — rate_limited is a strict subset of judge_failed; both
+    // increment for the same pair so the operator can read
+    // judge_failed - judge_rate_limited = "other call/parse failures".
+    if (p.judge_status === 'rate_limited') status_counts.judge_rate_limited += 1;
   }
 
   return {
@@ -676,7 +687,7 @@ function summaryTable(report: RagEvalReport): string {
   lines.push('');
   lines.push(`RAG eval — mode=${report.mode} model=${report.drafter_model}`);
   lines.push(
-    `pairs: ${report.sample_size_actual} (requested ${report.sample_size_requested})  ok=${report.status_counts.ok} draft_failed=${report.status_counts.draft_failed} embed_failed=${report.status_counts.embed_failed} error=${report.status_counts.error} judge_only=${report.status_counts.judge_only} judge_failed=${report.status_counts.judge_failed}`,
+    `pairs: ${report.sample_size_actual} (requested ${report.sample_size_requested})  ok=${report.status_counts.ok} draft_failed=${report.status_counts.draft_failed} embed_failed=${report.status_counts.embed_failed} error=${report.status_counts.error} judge_only=${report.status_counts.judge_only} judge_failed=${report.status_counts.judge_failed} judge_rate_limited=${report.status_counts.judge_rate_limited}`,
   );
   lines.push('');
   lines.push('Global cosine similarity:');
@@ -737,6 +748,16 @@ async function main(): Promise<void> {
     );
   }
 
+  // STAQPRO-224 — pacing between judge calls to stay under Anthropic's 50 RPM
+  // standard-tier ceiling for Haiku. 500ms gap = ~120 RPM theoretical but
+  // serialized so actually ~60 RPM after request latency. Operator can set
+  // 0 for fast smoke runs (`--limit 5`) or raise it on a noisy tier. Has no
+  // effect on cosine-only runs (no judge call to space).
+  const judgeRateLimitMs = Number.parseInt(process.env.JUDGE_RATE_LIMIT_MS ?? '500', 10);
+  if (judgeProvider && judgeRateLimitMs > 0) {
+    console.log(`[rag-eval] judge pacing: ${judgeRateLimitMs}ms between calls`);
+  }
+
   console.log(
     `[rag-eval] mode=${mode} limit=${args.limit} drafter=${drafterModel} embed=${embedModel}`,
   );
@@ -776,6 +797,12 @@ async function main(): Promise<void> {
           : null;
         const judgeFragment = judgeOk === null ? '' : ` judge_ok=${judgeOk}`;
         console.log(`[rag-eval] ${i}/${pairs.length} ok=${ok}${judgeFragment}`);
+      }
+      // STAQPRO-224 — sleep AFTER scoring (not before) so the first call has
+      // zero gap and the run starts immediately. Skip on the last iteration
+      // to avoid a dead-air pause before summary print.
+      if (judgeProvider && judgeRateLimitMs > 0 && i < pairs.length) {
+        await new Promise((r) => setTimeout(r, judgeRateLimitMs));
       }
     }
 

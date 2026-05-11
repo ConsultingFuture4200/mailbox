@@ -256,6 +256,7 @@ describe('buildReport — STAQPRO-198', () => {
       error: 0,
       judge_only: 0,
       judge_failed: 0,
+      judge_rate_limited: 0,
     });
     // ISO-8601 with 'Z' — verify it's parseable, since the file path uses it.
     expect(new Date(report.generated_at).toString()).not.toBe('Invalid Date');
@@ -339,7 +340,16 @@ describe('buildReport — STAQPRO-198', () => {
           cosine: 0.85,
           judge_provider: 'haiku',
           judge_status: 'call_failed',
-          judge_error: '429',
+          judge_error: 'auth',
+        }),
+        // STAQPRO-224 — rate_limited (was previously folded into call_failed).
+        baseScore({
+          sent_history_id: 5,
+          classification: 'reorder',
+          cosine: 0.8,
+          judge_provider: 'haiku',
+          judge_status: 'rate_limited',
+          judge_error: 'anthropic 429: throttled',
         }),
       ],
     });
@@ -351,8 +361,10 @@ describe('buildReport — STAQPRO-198', () => {
     expect(report.judge_aggregates_by_category?.inquiry.count).toBe(2);
     // No 'ok' judge in reorder, so the per-category bucket should be absent.
     expect(report.judge_aggregates_by_category?.reorder).toBeUndefined();
-    // judge_failed counts both parse_failed and call_failed.
-    expect(report.status_counts.judge_failed).toBe(2);
+    // judge_failed counts parse_failed + call_failed + rate_limited (any non-ok).
+    expect(report.status_counts.judge_failed).toBe(3);
+    // STAQPRO-224 — rate_limited bucket is a strict subset of judge_failed.
+    expect(report.status_counts.judge_rate_limited).toBe(1);
   });
 });
 
@@ -637,9 +649,11 @@ describe('scorePair — STAQPRO-198', () => {
       business_description: '',
     }));
     const judgeMock = vi.fn(async () => ({
+      // Generic call failure (not 429 — those are now `rate_limited` per
+      // STAQPRO-224). 5xx + network errors still surface as `call_failed`.
       status: 'call_failed' as const,
       scores: null,
-      error: 'anthropic 429',
+      error: 'anthropic 500',
     }));
 
     const score = await scorePair(
@@ -658,7 +672,7 @@ describe('scorePair — STAQPRO-198', () => {
     expect(score.cosine).toBeCloseTo(1, 10);
     expect(score.judge_status).toBe('call_failed');
     expect(score.judge_score).toBeUndefined();
-    expect(score.judge_error).toBe('anthropic 429');
+    expect(score.judge_error).toBe('anthropic 500');
   });
 });
 
