@@ -28,7 +28,12 @@
 
 export type JudgeProvider = 'haiku' | 'gpt-oss';
 
-export type JudgeStatus = 'ok' | 'parse_failed' | 'call_failed';
+// STAQPRO-224 — `rate_limited` is split out from `call_failed` so the operator
+// can distinguish a transient 429 (the eval already retries by spacing; rerun
+// at lower --limit) from a structural call failure (key missing, bad model
+// id, malformed response, etc). Counted separately in the harness'
+// status_counts.judge_rate_limited bucket.
+export type JudgeStatus = 'ok' | 'parse_failed' | 'call_failed' | 'rate_limited';
 
 export interface JudgeScores {
   voice_match: number;
@@ -293,8 +298,11 @@ async function callHaikuJudge(input: JudgePromptInput, deps: JudgeCallDeps): Pro
   }
   if (!res.ok) {
     const detail = await safeReadText(res);
+    // STAQPRO-224 — split 429 out as `rate_limited` so the harness can count
+    // it separately and the operator knows to space calls (or rerun) rather
+    // than chase a malformed-response bug.
     return {
-      status: 'call_failed',
+      status: res.status === 429 ? 'rate_limited' : 'call_failed',
       scores: null,
       error: `anthropic ${res.status}: ${detail.slice(0, 300)}`,
     };
@@ -370,8 +378,9 @@ async function callGptOssJudge(input: JudgePromptInput, deps: JudgeCallDeps): Pr
   }
   if (!res.ok) {
     const detail = await safeReadText(res);
+    // STAQPRO-224 — see Anthropic branch above for rationale.
     return {
-      status: 'call_failed',
+      status: res.status === 429 ? 'rate_limited' : 'call_failed',
       scores: null,
       error: `ollama-cloud ${res.status}: ${detail.slice(0, 300)}`,
     };

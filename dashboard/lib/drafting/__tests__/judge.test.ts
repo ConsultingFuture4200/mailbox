@@ -240,7 +240,7 @@ describe('callJudge — haiku', () => {
     expect(result.error).toContain('ANTHROPIC_API_KEY');
   });
 
-  it('returns call_failed on non-2xx responses', async () => {
+  it('returns rate_limited on 429 (STAQPRO-224)', async () => {
     const fetchFn = (async () =>
       new Response('rate limited', { status: 429 })) as unknown as typeof fetch;
     const result = await callJudge(
@@ -251,8 +251,22 @@ describe('callJudge — haiku', () => {
         env: { ANTHROPIC_API_KEY: 'sk-test' },
       },
     );
-    expect(result.status).toBe('call_failed');
+    expect(result.status).toBe('rate_limited');
     expect(result.error).toContain('429');
+  });
+
+  it('returns call_failed on non-429 non-2xx responses', async () => {
+    const fetchFn = (async () => new Response('boom', { status: 500 })) as unknown as typeof fetch;
+    const result = await callJudge(
+      'haiku',
+      { draft: 'a', actual_reply: 'b' },
+      {
+        fetchFn,
+        env: { ANTHROPIC_API_KEY: 'sk-test' },
+      },
+    );
+    expect(result.status).toBe('call_failed');
+    expect(result.error).toContain('500');
   });
 
   it('returns parse_failed with raw retained when output is malformed', async () => {
@@ -336,6 +350,21 @@ describe('callJudge — gpt-oss', () => {
     expect(captured.url).toBe('https://ollama.example.com/api/chat');
     const sentBody = JSON.parse((captured.init?.body as string) ?? '{}');
     expect(sentBody.model).toBe('gpt-oss:8b');
+  });
+
+  it('returns rate_limited on 429 (STAQPRO-224)', async () => {
+    const fetchFn = (async () =>
+      new Response('throttled', { status: 429 })) as unknown as typeof fetch;
+    const result = await callJudge(
+      'gpt-oss',
+      { draft: 'a', actual_reply: 'b' },
+      {
+        fetchFn,
+        env: { OLLAMA_CLOUD_API_KEY: 'oc-test' },
+      },
+    );
+    expect(result.status).toBe('rate_limited');
+    expect(result.error).toContain('429');
   });
 
   it('returns call_failed when OLLAMA_CLOUD_API_KEY is missing', async () => {
