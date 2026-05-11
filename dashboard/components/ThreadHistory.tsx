@@ -9,7 +9,9 @@ export function ThreadHistory({ messages }: { messages: ThreadMessage[] }) {
     <details className="group rounded border border-border-subtle">
       <summary className="cursor-pointer list-none select-none px-3 py-1.5 font-mono text-[11px] text-ink-dim hover:text-ink-muted">
         <span className="group-open:hidden">Conversation history ({messages.length} prior) ▸</span>
-        <span className="hidden group-open:inline">Conversation history ({messages.length} prior) ▾</span>
+        <span className="hidden group-open:inline">
+          Conversation history ({messages.length} prior) ▾
+        </span>
       </summary>
       <ul className="space-y-1 border-t border-border-subtle bg-bg-deep px-2 py-2">
         {messages.map((m) => (
