@@ -48,7 +48,7 @@ export async function getThreadHistory(
 
   const outbound: ThreadMessage[] = outboundRows.map((r) => ({
     direction: 'outbound' as const,
-    id: Number(r.id),                       // Int8 → number; thread <= ~14 rows so safe
+    id: Number(r.id), // Int8 → number; thread <= ~14 rows so safe
     from_addr: r.from_addr,
     to_addr: r.to_addr,
     subject: r.subject,

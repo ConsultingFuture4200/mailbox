@@ -1,7 +1,7 @@
 import { jsonBuildObject } from 'kysely/helpers/postgres';
 import { getKysely, normalizeDraftBody } from '@/lib/db';
-import type { DraftStatus, DraftWithMessage } from '@/lib/types';
 import { getThreadHistory } from '@/lib/queries-thread';
+import type { DraftStatus, DraftWithMessage } from '@/lib/types';
 
 // Re-exported for callers that previously imported VALID_STATUSES from here.
 // STAQPRO-137 moved the canonical const to lib/types.ts so all consumers
