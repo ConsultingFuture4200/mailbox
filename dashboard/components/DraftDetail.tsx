@@ -3,6 +3,7 @@ import type { DraftWithMessage } from '@/lib/types';
 import { ActionButtons, type ActionKind } from './ActionButtons';
 import { EmailContext } from './EmailContext';
 import type { RejectPayload } from './RejectPopover';
+import { RoutingBadge } from './RoutingBadge';
 import { SourcesUsedPanel } from './SourcesUsedPanel';
 import { TimeAgo } from './TimeAgo';
 
@@ -66,15 +67,23 @@ export function DraftDetail({
         <pre className="whitespace-pre-wrap font-serif text-base leading-relaxed text-ink">
           {draft.draft_body}
         </pre>
-        <p className="mt-4 font-mono text-xs text-ink-dim">
-          {draft.model}
+        {/* STAQPRO-331 #3 — RoutingBadge surfaces local-vs-cloud + model +
+            classifier confidence + a "low confidence fallback" tag when the
+            cloud route was a safety-net rather than a category match. The
+            old plain-text model line is dropped — the badge covers it. */}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <RoutingBadge
+            draftSource={draft.draft_source}
+            model={draft.model}
+            classification={draft.message.classification}
+            confidence={draft.message.confidence}
+          />
           {draft.input_tokens != null && draft.output_tokens != null && (
-            <>
-              {' · '}
+            <span className="font-mono text-xs text-ink-dim">
               {draft.input_tokens}↗ / {draft.output_tokens}↙ tokens
-            </>
+            </span>
           )}
-        </p>
+        </div>
         {/* STAQPRO-331 #2 — RAG attribution panel. Lazy-loads the
             rag_context_refs resolution on first expand. `key={draft.id}`
             forces a remount when the operator switches drafts so all local
