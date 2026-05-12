@@ -10,20 +10,44 @@ import { getKysely } from '@/lib/db';
 
 export interface GmailCooldown {
   until: Date | null;
+  set_at: Date | null;
+  // Google's "Retry after" hint is a SOFT minimum — STAQPRO-271 + the n8n
+  // boundary contract document that probing right at the hint timestamp
+  // tends to extend the cooldown. The operator-facing recommendation is
+  // `until + 1h` (STAQPRO-228 buffer). Mirror that here so the UI banner
+  // can show both the raw deadline and the safe-to-send recommendation.
+  recommended_safe_at: Date | null;
   isActive: boolean;
 }
 
+// STAQPRO-228 buffer constant. Kept in lockstep with
+// app/api/internal/gmail-cooldown/route.ts:BUFFER_MS so the operator UI
+// and the n8n-facing gate use the same recommendation.
+const SAFE_BUFFER_MS = 60 * 60 * 1000;
+
 export async function getGmailCooldown(): Promise<GmailCooldown> {
   const db = getKysely();
-  const row = await sql<{ gmail_rate_limit_until: string | null }>`
-    SELECT gmail_rate_limit_until FROM mailbox.system_state WHERE id = 1
+  const row = await sql<{
+    gmail_rate_limit_until: string | null;
+    gmail_rate_limit_set_at: string | null;
+  }>`
+    SELECT gmail_rate_limit_until, gmail_rate_limit_set_at
+    FROM mailbox.system_state
+    WHERE id = 1
   `.execute(db);
-  const until = row.rows[0]?.gmail_rate_limit_until
-    ? new Date(row.rows[0].gmail_rate_limit_until)
-    : null;
+  const r = row.rows[0];
+  const until = r?.gmail_rate_limit_until ? new Date(r.gmail_rate_limit_until) : null;
+  const set_at = r?.gmail_rate_limit_set_at ? new Date(r.gmail_rate_limit_set_at) : null;
+  const recommended_safe_at = until ? new Date(until.getTime() + SAFE_BUFFER_MS) : null;
+  // `isActive` is keyed off the recommended safe deadline so the banner
+  // stays visible across the +1h buffer window — matches the n8n-facing
+  // gate's behavior.
+  const isActive = recommended_safe_at !== null && recommended_safe_at.getTime() > Date.now();
   return {
     until,
-    isActive: until !== null && until.getTime() > Date.now(),
+    set_at,
+    recommended_safe_at,
+    isActive,
   };
 }
 

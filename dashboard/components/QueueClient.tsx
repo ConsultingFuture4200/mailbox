@@ -9,6 +9,7 @@ import { DraftCard } from './DraftCard';
 import { DraftDetail } from './DraftDetail';
 import { EditModal } from './EditModal';
 import { EmptyState } from './EmptyState';
+import { type CooldownState, GmailCooldownBanner } from './GmailCooldownBanner';
 import { NewDraftsBanner } from './NewDraftsBanner';
 import type { RejectPayload } from './RejectPopover';
 import { StuckApproved } from './StuckApproved';
@@ -24,11 +25,16 @@ type View = 'pending' | 'sent';
 interface Props {
   initialActive: DraftWithMessage[];
   initialSent: DraftWithMessage[];
+  initialCooldown: CooldownState;
 }
 
-export function QueueClient({ initialActive, initialSent }: Props) {
+export function QueueClient({ initialActive, initialSent, initialCooldown }: Props) {
   const [active, setActive] = useState(initialActive);
   const [sent, setSent] = useState(initialSent);
+  // STAQPRO-331 #5 — system-wide Gmail rate-limit cooldown. SSR-seeded so
+  // the banner appears on first paint; refreshed every POLL_INTERVAL_MS
+  // alongside the drafts list.
+  const [cooldown, setCooldown] = useState<CooldownState>(initialCooldown);
   const [view, setView] = useState<View>('pending');
   const [removed, setRemoved] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState<Busy>(null);
@@ -47,11 +53,15 @@ export function QueueClient({ initialActive, initialSent }: Props) {
 
   const fetchData = useCallback(async (silent: boolean) => {
     try {
-      const [actRes, sentRes] = await Promise.all([
+      const [actRes, sentRes, cooldownRes] = await Promise.all([
         fetch(apiUrl('/api/drafts?status=pending,edited&limit=50'), { cache: 'no-store' }),
         fetch(apiUrl('/api/drafts?status=approved,sent,rejected&limit=50'), {
           cache: 'no-store',
         }),
+        // STAQPRO-331 #5 — Gmail cooldown refresh. Don't gate the whole
+        // fetchData on it; if the cooldown route errors, drafts still
+        // update. Cooldown is best-effort UI signal.
+        fetch(apiUrl('/api/system/gmail-cooldown'), { cache: 'no-store' }),
       ]);
       if (!actRes.ok || !sentRes.ok) return;
       const actJson = await actRes.json();
@@ -71,6 +81,11 @@ export function QueueClient({ initialActive, initialSent }: Props) {
 
       setActive(nextActive);
       setSent(nextSent);
+
+      if (cooldownRes.ok) {
+        const cooldownJson = (await cooldownRes.json()) as CooldownState;
+        setCooldown(cooldownJson);
+      }
     } catch {
       // Background poll — swallow transient errors.
     }
@@ -282,6 +297,15 @@ export function QueueClient({ initialActive, initialSent }: Props) {
         </div>
       </header>
 
+      {/* STAQPRO-331 #5 — system-wide Gmail cooldown banner. Spans the
+          full width above both panes so the operator sees it whether
+          they're in Inbox or Sent view. Self-hides when not active. */}
+      {cooldown.is_active && (
+        <div className="border-b border-border-subtle bg-bg-panel px-4 py-2">
+          <GmailCooldownBanner cooldown={cooldown} />
+        </div>
+      )}
+
       {/* Two-pane body */}
       <div className="flex min-h-0 flex-1">
         {/* Left list pane */}
@@ -308,7 +332,12 @@ export function QueueClient({ initialActive, initialSent }: Props) {
 
           {view === 'pending' && (stuckApproved.length > 0 || newCount > 0) && (
             <div className="space-y-2 border-b border-border-subtle p-2">
-              <StuckApproved drafts={stuckApproved} busyId={busyRetryId} onRetry={fireRetry} />
+              <StuckApproved
+                drafts={stuckApproved}
+                busyId={busyRetryId}
+                onRetry={fireRetry}
+                cooldownActive={cooldown.is_active}
+              />
               <NewDraftsBanner count={newCount} onDismiss={dismissNewDrafts} />
             </div>
           )}
