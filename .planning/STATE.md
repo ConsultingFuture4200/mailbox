@@ -153,6 +153,7 @@ MailBOX-Classify; fresh-install gotcha captured in memory
 | 260502-rk0 | Scaffold onboarding wizard GUI (STAQPRO-152) + customer onboarding docs templates (STAQPRO-132) | 2026-05-03 | c1d66f9 | [260502-rk0-scaffold-onboarding-wizard-gui-staqpro-1](./quick/260502-rk0-scaffold-onboarding-wizard-gui-staqpro-1/) |
 | 260510-7sp | Add conversation history view to dashboard draft detail | 2026-05-10 | a4bc170 | [260510-7sp-add-conversation-history-view-to-dashboa](./quick/260510-7sp-add-conversation-history-view-to-dashboa/) |
 | 260511-wsi | STAQPRO-331 #1: structured reject feedback backend + sandbox UX port | 2026-05-12 | a2172c7 | [260511-wsi-staqpro-331-1-structured-reject-feedback](./quick/260511-wsi-staqpro-331-1-structured-reject-feedback/) |
+| 260512-080 | STAQPRO-331 #9 + #11: toast+undo on reject + visibility-gated 30s queue polling | 2026-05-12 | d6c95d5 | [260512-080-toast-undo-for-reject-30s-queue-polling-](./quick/260512-080-toast-undo-for-reject-30s-queue-polling-/) |
 
 ## Architectural Decision Record: Dashboard Stack Pivot
 
