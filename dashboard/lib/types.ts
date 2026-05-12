@@ -121,6 +121,7 @@ export interface Draft {
   draft_subject: string | null;
   draft_body: string;
   model: string;
+  draft_source: DraftSource;
   input_tokens: number | null;
   output_tokens: number | null;
   cost_usd: string | null; // pg returns NUMERIC as string

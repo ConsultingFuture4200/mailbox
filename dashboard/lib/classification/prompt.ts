@@ -106,3 +106,33 @@ export function routeFor(category: Category, confidence: number): Route {
   if (LOCAL_CATEGORIES.includes(category)) return 'local';
   return 'cloud';
 }
+
+// STAQPRO-331 #3 — explanation for why a draft took its route. Operator-facing
+// in the DraftDetail RoutingBadge; lets the reviewer distinguish "model was
+// confident, took the normal path" from "fell back to cloud as a safety net."
+// Pure derivation from existing columns (no new schema). Returns null when
+// classification metadata is missing or the source is a legacy
+// `local_qwen3` / `cloud_haiku` value the live drafter no longer writes.
+export type RoutingReason =
+  | 'local_category'
+  | 'cloud_category'
+  | 'cloud_low_confidence'
+  | 'unknown';
+
+export function routingReasonFor(
+  source: 'local' | 'cloud' | 'local_qwen3' | 'cloud_haiku',
+  category: Category | null,
+  confidence: number | null,
+): RoutingReason {
+  if (source !== 'local' && source !== 'cloud') return 'unknown';
+  if (category == null) return 'unknown';
+  if (source === 'local') {
+    return LOCAL_CATEGORIES.includes(category) ? 'local_category' : 'unknown';
+  }
+  // source === 'cloud'
+  if (confidence != null && confidence < LOCAL_CONFIDENCE_FLOOR) {
+    return 'cloud_low_confidence';
+  }
+  if (CLOUD_CATEGORIES.includes(category)) return 'cloud_category';
+  return 'unknown';
+}
