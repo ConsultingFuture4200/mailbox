@@ -110,6 +110,32 @@ export async function getDraftRow(id: number): Promise<{
   return r.rows[0] ?? null;
 }
 
+// STAQPRO-331 #9 — read the latest mailbox.state_transitions row for a draft.
+// Column names per migration 009: from_status, to_status, actor, reason,
+// transitioned_at.
+export async function getLatestTransition(draftId: number): Promise<{
+  from_status: string;
+  to_status: string;
+  actor: string;
+  reason: string | null;
+} | null> {
+  const pool = getTestPool();
+  const r = await pool.query<{
+    from_status: string;
+    to_status: string;
+    actor: string;
+    reason: string | null;
+  }>(
+    `SELECT from_status, to_status, actor, reason
+       FROM mailbox.state_transitions
+      WHERE draft_id = $1
+      ORDER BY transitioned_at DESC
+      LIMIT 1`,
+    [draftId],
+  );
+  return r.rows[0] ?? null;
+}
+
 // Build a minimal NextRequest stand-in that satisfies the call sites in our
 // route handlers (they only touch .url and .json()).
 export function fakeRequest(
