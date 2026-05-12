@@ -53,8 +53,18 @@ export function SourcesUsedPanel({ draftId }: Props) {
   // Lazy-load: only fetch when the operator expands the panel. Avoids one
   // extra Qdrant round-trip per draft in the common case (operator never
   // opens it for high-confidence drafts they approve without inspection).
+  //
+  // Intentionally NOT depending on `data` or `loading` — both are set inside
+  // this effect. Including them caused cleanup to fire (cancelling the
+  // in-flight fetch) the instant setLoading(true) re-rendered, leaving the
+  // panel stuck at "Loading..." forever. The `data !== null` guard in the
+  // body reads via closure, which is correct because the effect only fires
+  // when `open` or `draftId` change — both user-driven transitions where
+  // re-fetching is exactly what we want.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
-    if (!open || data !== null || loading) return;
+    if (!open) return;
+    if (data !== null) return; // already loaded for this draft
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -75,7 +85,7 @@ export function SourcesUsedPanel({ draftId }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [open, draftId, data, loading]);
+  }, [open, draftId]);
 
   // No explicit reset effect — parent passes `key={draft.id}` so React
   // unmounts + remounts the panel when the operator switches drafts.
