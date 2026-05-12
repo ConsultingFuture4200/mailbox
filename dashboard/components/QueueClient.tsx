@@ -59,6 +59,10 @@ export function QueueClient({ initialActive, initialSent, initialCooldown }: Pro
   // STAQPRO-331 #7 — '?' toggles a keyboard-shortcut cheatsheet overlay.
   // Discoverability for the operator who didn't read the docs.
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
+  // STAQPRO-331 #8 — pending-queue sort order. 'newest' is the default
+  // (matches the listDrafts ORDER BY created_at DESC server-side sort);
+  // 'oldest' surfaces stale/overdue drafts at the top.
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
 
   const knownIds = useRef<Set<number>>(new Set(initialActive.map((d) => d.id)));
 
@@ -304,7 +308,19 @@ export function QueueClient({ initialActive, initialSent, initialCooldown }: Pro
     }
   }
 
-  const visibleActive = active.filter((d) => !removed.has(d.id));
+  // STAQPRO-331 #8 — apply pending-queue sort. Server returns newest-first
+  // (created_at DESC); 'oldest' flips it so overdue rows surface at the top.
+  // Sent view stays in server order — there's no actionable "oldest first"
+  // mental model for already-finalized rows.
+  const visibleActive = (() => {
+    const filtered = active.filter((d) => !removed.has(d.id));
+    if (sortOrder !== 'oldest') return filtered;
+    return [...filtered].sort((a, b) => {
+      const at = new Date(a.created_at).getTime();
+      const bt = new Date(b.created_at).getTime();
+      return at - bt;
+    });
+  })();
   // STAQPRO-202 — drafts stuck at status='approved' beyond the webhook
   // timeout window. Sole operator recovery surface for send-side failures
   // (the 'failed' status was retired in migration 016 — see CLAUDE.md
@@ -475,6 +491,38 @@ export function QueueClient({ initialActive, initialSent, initialCooldown }: Pro
               onClick={() => switchView('sent')}
             />
           </nav>
+
+          {/* STAQPRO-331 #8 — pending-only sort selector. Lets the operator
+              flip to oldest-first so overdue rows surface at the top of the
+              list. Hidden in Sent view (no actionable "oldest first" there). */}
+          {view === 'pending' && visibleActive.length > 1 && (
+            <div className="flex shrink-0 items-center justify-end gap-2 border-b border-border-subtle bg-bg-panel px-3 py-1.5 font-mono text-[11px] text-ink-dim">
+              <span>Sort</span>
+              <button
+                type="button"
+                onClick={() => setSortOrder('newest')}
+                className={
+                  sortOrder === 'newest'
+                    ? 'text-ink underline underline-offset-2'
+                    : 'text-ink-muted hover:text-ink'
+                }
+              >
+                newest
+              </button>
+              <span aria-hidden>·</span>
+              <button
+                type="button"
+                onClick={() => setSortOrder('oldest')}
+                className={
+                  sortOrder === 'oldest'
+                    ? 'text-ink underline underline-offset-2'
+                    : 'text-ink-muted hover:text-ink'
+                }
+              >
+                oldest
+              </button>
+            </div>
+          )}
 
           {view === 'pending' && (stuckApproved.length > 0 || newCount > 0) && (
             <div className="space-y-2 border-b border-border-subtle p-2">
