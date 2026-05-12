@@ -268,3 +268,24 @@ What's nice about ending here: the pipeline currently works, has been running cl
 - Compose: `/home/bob/mailbox/docker-compose.yml` (current state: `OLLAMA_KEEP_ALIVE=24h`, n8n 1.123.35, Caddy)
 - Current Ollama models: `qwen3:4b`, `qwen3:4b-ctx4k` (canonical for production), `nomic-embed-text:v1.5`
 - MailBOX workflow: live in n8n, ID retrievable via `SELECT id, name FROM workflow_entity WHERE name = 'MailBOX'`
+
+---
+
+## Addendum — 2026-05-12: rebuild from `qwen3:4b-instruct` (STAQPRO-330)
+
+The Modelfile in this build-log specifies `FROM qwen3:4b`. **As of 2026-05-12, use `FROM qwen3:4b-instruct` instead.** The original choice is preserved above as the historical record of what was built on 2026-04-25.
+
+Why: between 2026-04-13 and 2026-05-05, the upstream `qwen3:4b` tag in Ollama's library was swapped to a thinking-trained variant. The drafting code's `/no_think` directive only works against the pre-thinking weights — the newer Qwen3-4B ignores it entirely and emits chain-of-thought scratchwork into the response. On M2 (customer #2, built 2026-05-05 *after* the upstream swap), every LOCAL draft came out with an empty `draft_body`, producing 38 rejected drafts before diagnosis on 2026-05-12. M1 happened to remain on the pre-swap blob (frozen Apr-13 snapshot, blob `sha256-7485fe6f...`), so it kept working by accident.
+
+The fix is to build the ctx4k alias from `qwen3:4b-instruct` (Qwen team's blessed non-thinking variant, capabilities `completion, tools`, no `thinking`). Same Modelfile shape, just the FROM line differs:
+
+```
+FROM qwen3:4b-instruct
+PARAMETER num_ctx 4096
+```
+
+(The TEMPLATE + other PARAMETER lines from the original Modelfile remain valid — `qwen3:4b-instruct` accepts the same chat format. The simpler form above relies on the inherited template from `qwen3:4b-instruct`, which works for both classify and drafting.)
+
+**Never `FROM qwen3:4b` for drafting** — it's a moving tag that re-introduces thinking-mode at the next upstream rebuild. See STAQPRO-330 for the canonical fix + fleet rollout + STAQPRO-202 factory-bootstrap update.
+
+Full diagnosis: STAQPRO-177 session-4 closing comment (2026-05-12).

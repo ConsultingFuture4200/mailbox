@@ -22,8 +22,11 @@ psql postgresql://mailbox:mailbox@localhost:5432/mailbox \
 # 4. (Optional) Pull a small model for local Qwen3 testing.
 #    The CPU image is slow — only pull if you actually need to exercise
 #    the classify or draft paths locally. For most dashboard work, skip.
+#    Use the non-thinking instruct variant: `qwen3:4b` (the bare tag) is a
+#    moving alias that may point to a thinking-trained variant which emits
+#    CoT scratchwork instead of clean drafts. See STAQPRO-330.
 docker compose -f docker-compose.dev.yml --env-file .env.dev \
-  exec ollama ollama pull qwen3:4b
+  exec ollama ollama pull qwen3:4b-instruct
 ```
 
 ## Running the dashboard

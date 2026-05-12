@@ -125,8 +125,16 @@ docker compose up -d --remove-orphans
 > After services are running, pull the AI models into Ollama:
 
 ```bash
-# Pull the classification/draft model
-docker compose exec ollama ollama pull qwen3:4b
+# Pull the classification/draft model — non-thinking instruct variant.
+# Do NOT pull the bare `qwen3:4b` tag for drafting: it's a moving alias
+# that has shifted to a thinking-trained variant which emits CoT
+# scratchwork instead of clean drafts (STAQPRO-330).
+docker compose exec ollama ollama pull qwen3:4b-instruct
+
+# Build the production ctx4k alias used by classify + draft:
+#   FROM qwen3:4b-instruct
+#   PARAMETER num_ctx 4096
+# docker compose exec ollama ollama create qwen3:4b-ctx4k -f /path/to/Modelfile
 
 # Pull the embedding model
 docker compose exec ollama ollama pull nomic-embed-text:v1.5
