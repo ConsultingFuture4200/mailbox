@@ -71,6 +71,14 @@ export const rejectBodySchema = z
 
 export type RejectBody = z.infer<typeof rejectBodySchema>;
 
+// POST /api/drafts/[id]/undo-reject — STAQPRO-331 #9.
+// Empty body. Strict so callers can't smuggle extra fields (the route flips
+// rejected → pending and deletes the latest draft_feedback row; we don't want
+// silent acceptance of e.g. an unsupported reason override). `parseJson`
+// normalizes missing/invalid JSON to `{}`, which this schema accepts.
+export const undoRejectBodySchema = z.object({}).strict();
+export type UndoRejectBody = z.infer<typeof undoRejectBodySchema>;
+
 // POST /api/drafts/[id]/edit — body { draft_body: string, draft_subject?: string }.
 const MAX_BODY = 10_000;
 export const editBodySchema = z.object({

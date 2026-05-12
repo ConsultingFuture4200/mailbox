@@ -4,6 +4,7 @@ import {
   deleteSeededDraft,
   fakeRequest,
   getDraftRow,
+  getLatestTransition,
   getTestPool,
   HAS_DB,
   seedDraft,
@@ -355,6 +356,132 @@ dbDescribe('drafts route handlers — real Postgres', () => {
       const { GET } = await import('@/app/api/drafts/route');
       const res = await GET(fakeRequest({ url: 'http://test/api/drafts?status=bogus' }));
       expect(res.status).toBe(400);
+    });
+  });
+
+  describe('POST /api/drafts/[id]/undo-reject', () => {
+    // STAQPRO-331 #9 — operator-initiated undo of a fresh reject. Flips
+    // rejected → pending and removes the latest draft_feedback row in one
+    // transaction; writes a state_transitions audit row via session GUCs.
+
+    it('flips rejected → pending and removes the latest draft_feedback row', async () => {
+      const seed = await seedDraft({ status: 'pending' });
+      try {
+        // First reject so we have a row in draft_feedback to remove.
+        const { POST: rejectPOST } = await import('@/app/api/drafts/[id]/reject/route');
+        const rejectRes = await rejectPOST(fakeRequest({ body: { reason_code: 'wrong_tone' } }), {
+          params: { id: String(seed.draftId) },
+        });
+        expect(rejectRes.status).toBe(200);
+        const afterReject = await getDraftRow(seed.draftId);
+        expect(afterReject?.status).toBe('rejected');
+
+        const { getKysely } = await import('@/lib/db');
+        const fbBefore = await getKysely()
+          .selectFrom('draft_feedback')
+          .selectAll()
+          .where('draft_id', '=', seed.draftId)
+          .execute();
+        expect(fbBefore).toHaveLength(1);
+
+        const { POST: undoPOST } = await import('@/app/api/drafts/[id]/undo-reject/route');
+        const undoRes = await undoPOST(fakeRequest({ body: {} }), {
+          params: { id: String(seed.draftId) },
+        });
+        expect(undoRes.status).toBe(200);
+        const afterUndo = await getDraftRow(seed.draftId);
+        expect(afterUndo?.status).toBe('pending');
+
+        const fbAfter = await getKysely()
+          .selectFrom('draft_feedback')
+          .selectAll()
+          .where('draft_id', '=', seed.draftId)
+          .execute();
+        expect(fbAfter).toHaveLength(0);
+      } finally {
+        await deleteSeededDraft(seed);
+      }
+    });
+
+    it('returns 409 when draft is not in rejected state', async () => {
+      const seed = await seedDraft({ status: 'pending' });
+      try {
+        const { POST } = await import('@/app/api/drafts/[id]/undo-reject/route');
+        const res = await POST(fakeRequest({ body: {} }), {
+          params: { id: String(seed.draftId) },
+        });
+        expect(res.status).toBe(409);
+        const row = await getDraftRow(seed.draftId);
+        expect(row?.status).toBe('pending'); // unchanged
+
+        // No draft_feedback rows existed; ensure none were created/touched.
+        const { getKysely } = await import('@/lib/db');
+        const fb = await getKysely()
+          .selectFrom('draft_feedback')
+          .selectAll()
+          .where('draft_id', '=', seed.draftId)
+          .execute();
+        expect(fb).toHaveLength(0);
+      } finally {
+        await deleteSeededDraft(seed);
+      }
+    });
+
+    it("writes a state_transitions row with actor='operator' reason='undo_reject'", async () => {
+      const seed = await seedDraft({ status: 'pending' });
+      try {
+        const { POST: rejectPOST } = await import('@/app/api/drafts/[id]/reject/route');
+        await rejectPOST(fakeRequest({ body: { reason_code: 'wrong_tone' } }), {
+          params: { id: String(seed.draftId) },
+        });
+        const { POST: undoPOST } = await import('@/app/api/drafts/[id]/undo-reject/route');
+        const res = await undoPOST(fakeRequest({ body: {} }), {
+          params: { id: String(seed.draftId) },
+        });
+        expect(res.status).toBe(200);
+
+        const latest = await getLatestTransition(seed.draftId);
+        expect(latest).not.toBeNull();
+        expect(latest?.from_status).toBe('rejected');
+        expect(latest?.to_status).toBe('pending');
+        expect(latest?.actor).toBe('operator');
+        expect(latest?.reason).toBe('undo_reject');
+      } finally {
+        await deleteSeededDraft(seed);
+      }
+    });
+
+    it('is idempotent — second undo returns 409 without further mutation', async () => {
+      const seed = await seedDraft({ status: 'pending' });
+      try {
+        const { POST: rejectPOST } = await import('@/app/api/drafts/[id]/reject/route');
+        await rejectPOST(fakeRequest({ body: { reason_code: 'wrong_tone' } }), {
+          params: { id: String(seed.draftId) },
+        });
+        const { POST: undoPOST } = await import('@/app/api/drafts/[id]/undo-reject/route');
+        const first = await undoPOST(fakeRequest({ body: {} }), {
+          params: { id: String(seed.draftId) },
+        });
+        expect(first.status).toBe(200);
+        const second = await undoPOST(fakeRequest({ body: {} }), {
+          params: { id: String(seed.draftId) },
+        });
+        expect(second.status).toBe(409);
+
+        // Confirm draft is still 'pending' (first undo's terminal state) and
+        // no additional draft_feedback rows were created/removed.
+        const row = await getDraftRow(seed.draftId);
+        expect(row?.status).toBe('pending');
+        const { getKysely } = await import('@/lib/db');
+        const fb = await getKysely()
+          .selectFrom('draft_feedback')
+          .selectAll()
+          .where('draft_id', '=', seed.draftId)
+          .execute();
+        expect(fb).toHaveLength(0);
+      } finally {
+        await deleteSeededDraft(seed);
+      }
     });
   });
 });
