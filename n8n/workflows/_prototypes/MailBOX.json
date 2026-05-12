@@ -1,0 +1,296 @@
+{
+  "name": "MailBOX",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyX",
+              "value": 1,
+              "unit": "minutes"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "labelIds": [
+            "Label_8977764561344666399"
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -208,
+        -16
+      ],
+      "id": "be5757d9-7e30-4fab-8711-92c568dec627",
+      "name": "Gmail Trigger",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "PFM8fs6Dnp0xLcJJ",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a29b942f-f52e-4d3b-9dcc-4199bdabeb6f",
+              "name": "message_id",
+              "value": "={{ $('Extract Fields').item.json.message_id }}",
+              "type": "string"
+            },
+            {
+              "id": "65d9fdd4-31ca-4863-9c7f-d1a377810888",
+              "name": "thread_id",
+              "value": "={{ $('Extract Fields').item.json.thread_id }}",
+              "type": "string"
+            },
+            {
+              "id": "33f09bb6-1e9a-40e1-9b58-c9a8bbaf4f30",
+              "name": "from",
+              "value": "={{ $('Extract Fields').item.json.from }}",
+              "type": "string"
+            },
+            {
+              "id": "ca2236dc-a7d6-4d1d-b9ea-b9bc92b0ea22",
+              "name": "to",
+              "value": "={{ $('Extract Fields').item.json.to }}",
+              "type": "string"
+            },
+            {
+              "id": "2744dc1d-9b32-450d-ae3f-17072e9edeee",
+              "name": "subject",
+              "value": "={{ $('Extract Fields').item.json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "0f56b21f-d163-423d-8f44-949a0e9d911b",
+              "name": "received_at",
+              "value": "={{ $('Extract Fields').item.json.received_at }}",
+              "type": "string"
+            },
+            {
+              "id": "6cd48135-a0c0-4a23-9e84-d77a84633ef2",
+              "name": "snippet",
+              "value": "={{ $('Extract Fields').item.json.snippet }}",
+              "type": "string"
+            },
+            {
+              "id": "64dda29e-f7cf-4289-9a55-0d0789881cad",
+              "name": "body",
+              "value": "={{ $('Extract Fields').item.json.body }}",
+              "type": "string"
+            },
+            {
+              "id": "d7eb243a-8e07-4e6d-b6bf-6574c951d87d",
+              "name": "classification",
+              "value": "={{ JSON.parse($json.response).classification }}",
+              "type": "string"
+            },
+            {
+              "id": "9e9e672a-f7f5-4bb1-9a76-a861e9610859",
+              "name": "confidence",
+              "value": "={{ JSON.parse($json.response).confidence }}",
+              "type": "string"
+            },
+            {
+              "id": "8a940f21-f03e-42df-be71-b243a8de6379",
+              "name": "classified_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "2fe773b9-9011-43ab-8f49-5d40f34f59ef",
+              "name": "model",
+              "value": "qwen3:4b",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        176,
+        -16
+      ],
+      "id": "ae75d930-ab6d-4780-950d-b976ce2291e6",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "980117e8-8def-432f-bd90-187154403485",
+              "name": "message_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "e3d5f5f2-c9d1-4af5-a7e9-e21abb88ca6c",
+              "name": "thread_id",
+              "value": "={{ $json.threadId }}",
+              "type": "string"
+            },
+            {
+              "id": "61f22d05-b4e7-4dcc-b4fc-fb0f76cf2be4",
+              "name": "=from",
+              "value": "={{ $json.from.value[0].address }}",
+              "type": "string"
+            },
+            {
+              "id": "b4b3f3ca-6a4a-42f2-a8d4-6076ed962060",
+              "name": "=to",
+              "value": "={{ $json.to.value[0].address }}",
+              "type": "string"
+            },
+            {
+              "id": "d59e0867-36bd-43e7-a3e1-9a0427c4e57e",
+              "name": "=subject",
+              "value": "={{ $json.subject }}",
+              "type": "string"
+            },
+            {
+              "id": "be7f16e9-53e3-4f56-b788-169a36e7cef8",
+              "name": "received_at",
+              "value": "={{ $json.date }}",
+              "type": "string"
+            },
+            {
+              "id": "0d261c5f-9946-4ad6-8390-2a39a45bdd91",
+              "name": "snippet",
+              "value": "={{ $json.text.substring(0, 200) }}",
+              "type": "string"
+            },
+            {
+              "id": "5afd1bbb-16e8-4b14-9622-b99f8c1787f5",
+              "name": "=body",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -80,
+        -16
+      ],
+      "id": "7b30015b-ce58-4a14-8bfa-aed37dd8258c",
+      "name": "Extract Fields"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://ollama:11434/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"qwen3:4b\",\n  \"prompt\": {{ JSON.stringify(\"/no_think You are an email classifier. Classify this email into exactly one of: action_required, informational, personal, spam, test. Respond with a single JSON object with two fields: classification (the category) and confidence (number between 0 and 1). No other text.\\n\\nFrom: \" + $json.from + \"\\nSubject: \" + $json.subject + \"\\nBody: \" + $json.body) }},\n  \"stream\": false,\n  \"format\": \"json\"\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        48,
+        -16
+      ],
+      "id": "9b38cae1-7c97-47c7-af5b-719a834872e9",
+      "name": "Classify"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO inbox_messages (\n  message_id, thread_id, from_addr, to_addr, subject,\n  received_at, snippet, body, classification, confidence,\n  classified_at, model\n) VALUES (\n  $1, $2, $3, $4, $5,\n  $6::timestamptz, $7, $8, $9, $10::numeric,\n  $11::timestamptz, $12\n)\nON CONFLICT (message_id) DO NOTHING\nRETURNING id;",
+        "options": {
+          "queryReplacement": "=={{ $json.message_id }},={{ $json.thread_id }},={{ $json.from }},={{ $json.to }},={{ $json.subject }},={{ $json.received_at }},={{ $json.snippet }},={{ $json.body }},={{ $json.classification }},={{ $json.confidence }},={{ $json.classified_at }},={{ $json.model }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        304,
+        -16
+      ],
+      "id": "9f95ef18-a8b1-496e-a819-cfeb4a68bb7b",
+      "name": "Store in DB",
+      "credentials": {
+        "postgres": {
+          "id": "JFX4tvrffvKnTouV",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Fields": {
+      "main": [
+        [
+          {
+            "node": "Classify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        [
+          {
+            "node": "Store in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "35d1bbfb-6f27-4080-aba8-83a01ef5277c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "5676b8c71ecd9098f2dfabd85d6332f33dbacc7ea107596c9175e3da860403d8"
+  },
+  "id": "oN1j1ai74K9dSQv1",
+  "tags": []
+}
