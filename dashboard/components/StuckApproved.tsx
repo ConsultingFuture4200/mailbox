@@ -23,10 +23,16 @@ export function StuckApproved({
   drafts,
   busyId,
   onRetry,
+  cooldownActive = false,
 }: {
   drafts: DraftWithMessage[];
   busyId: number | null;
   onRetry: (draft: DraftWithMessage) => void;
+  // STAQPRO-331 #5 — disable retry while system-wide Gmail cooldown is
+  // active. The retry route also gates server-side (lib/transitions.ts),
+  // but blocking the click prevents the dashboard 502+toast flicker and
+  // reinforces the banner's "wait until safe-send" message.
+  cooldownActive?: boolean;
 }) {
   const [open, setOpen] = useState(true);
   const [armedId, setArmedId] = useState<number | null>(null);
@@ -106,7 +112,12 @@ export function StuckApproved({
                 <button
                   type="button"
                   onClick={() => handleClick(draft)}
-                  disabled={isBusy}
+                  disabled={isBusy || cooldownActive}
+                  title={
+                    cooldownActive
+                      ? 'Gmail rate-limited — retry will be blocked until the cooldown clears'
+                      : undefined
+                  }
                   className={`inline-flex items-center gap-1.5 rounded border px-3 py-1.5 font-sans text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                     isArmed
                       ? 'border-accent-red bg-accent-red/10 text-accent-red hover:bg-accent-red/20'
@@ -116,9 +127,11 @@ export function StuckApproved({
                   <RotateCcw size={12} />
                   {isBusy
                     ? 'Retrying…'
-                    : isArmed
-                      ? 'Click again to re-send'
-                      : 'Retry (verify Gmail first)'}
+                    : cooldownActive
+                      ? 'Retry (cooldown active)'
+                      : isArmed
+                        ? 'Click again to re-send'
+                        : 'Retry (verify Gmail first)'}
                 </button>
               </li>
             );
