@@ -1,6 +1,7 @@
 'use client';
 
 import type { DraftWithMessage } from '@/lib/types';
+import { FreshnessChip } from './FreshnessChip';
 import { TimeAgo } from './TimeAgo';
 
 // Outlook-style compact list row. Fixed h-14 so 30+ drafts fit in the
@@ -28,10 +29,8 @@ export function DraftCard({
       ? sentIndicator(draft.status)
       : classificationIndicator(m.classification, m.confidence);
 
-  // Sent view shows when the draft was finalized; pending view shows when
-  // the inbound email landed.
-  const timestamp =
-    mode === 'sent' ? (draft.sent_at ?? draft.updated_at ?? draft.created_at) : m.received_at;
+  // Sent view shows when the draft was finalized.
+  const sentTimestamp = draft.sent_at ?? draft.updated_at ?? draft.created_at;
 
   return (
     <button
@@ -51,8 +50,19 @@ export function DraftCard({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="truncate text-sm font-medium text-ink">{fromName}</span>
-          <span className="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-ink-dim">
-            <TimeAgo iso={timestamp} />
+          {/* STAQPRO-331 #8 — pending view uses the freshness chip keyed on
+              drafts.created_at so the operator sees how long the draft has
+              been waiting for approval (the actionable signal), with color
+              advancing as it ages. Sent view keeps the relative-time
+              timestamp since the row is read-only — color isn't actionable. */}
+          <span className="ml-auto shrink-0 font-mono tabular-nums">
+            {mode === 'sent' ? (
+              <span className="font-mono text-[11px] text-ink-dim">
+                <TimeAgo iso={sentTimestamp} />
+              </span>
+            ) : (
+              <FreshnessChip iso={draft.created_at} />
+            )}
           </span>
         </div>
         <div className="flex min-w-0 items-center gap-2 overflow-hidden">
