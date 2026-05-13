@@ -50,6 +50,10 @@ export async function POST(req: NextRequest) {
         // STAQPRO-219 — passed into retrieveForDraft so it can compute the
         // inbound's own point UUID and exclude it via must_not.has_id.
         'message_id',
+        // STAQPRO-222 (H3) — passed into retrieveForDraft so it can drop
+        // every same-thread point from retrieval via must_not on
+        // payload.thread_id (gated by RAG_RETRIEVE_EXCLUDE_SAME_THREAD).
+        'thread_id',
       ])
       .where('id', '=', draft_id)
       .limit(1)
@@ -95,6 +99,10 @@ export async function POST(req: NextRequest) {
         persona_key: DEFAULT_PERSONA_KEY,
         // STAQPRO-219 — drop self-match from retrieval via must_not.has_id.
         message_id: row.message_id,
+        // STAQPRO-222 (H3) — drop every same-thread point from retrieval
+        // via must_not on payload.thread_id. Default-on; flag-gated by
+        // RAG_RETRIEVE_EXCLUDE_SAME_THREAD env var inside retrieveForDraft.
+        thread_id: row.thread_id,
       }),
       getCategoryExemplars(classification_category, 1, DEFAULT_PERSONA_KEY),
     ]);

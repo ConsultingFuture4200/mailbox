@@ -158,6 +158,14 @@ export interface SearchOptions {
   // burns one top-k slot on every query. Caller passes the inbound's own
   // deterministic point UUID (pointIdFromMessageId(message_id)).
   excludePointId?: string;
+  // STAQPRO-222 (H3) — drop every point whose payload.thread_id matches the
+  // inbound's thread_id. Same-thread refs duplicate context the drafter
+  // already has in the inbound body's quoted-history chain. ANDed with the
+  // must_not.has_id clause when both are set (Qdrant's must_not entries are
+  // OR-of-mismatch — i.e. a point is excluded if any clause matches).
+  // payload.thread_id is one of the indexed fields per the STAQPRO-188
+  // bootstrap (root CLAUDE.md service topology).
+  excludeThreadId?: string;
 }
 
 // Search by vector with optional hard filters on payload.sender and
@@ -177,8 +185,15 @@ export async function searchByVector(
   if (opts.recipientFilter) must.push({ key: 'recipient', match: { value: opts.recipientFilter } });
   if (opts.personaKey) must.push({ key: 'persona_key', match: { value: opts.personaKey } });
   // STAQPRO-219 — must_not.has_id drops the inbound's own UUID from results.
-  const must_not: Array<{ has_id: string[] }> = [];
+  // STAQPRO-222 (H3) — must_not.thread_id drops every point in the same
+  // conversation thread. Qdrant treats heterogeneous must_not clauses as
+  // an OR-of-mismatch: a point is excluded if ANY clause matches it.
+  type MustNotClause = { has_id: string[] } | { key: string; match: { value: string } };
+  const must_not: MustNotClause[] = [];
   if (opts.excludePointId) must_not.push({ has_id: [opts.excludePointId] });
+  if (opts.excludeThreadId) {
+    must_not.push({ key: 'thread_id', match: { value: opts.excludeThreadId } });
+  }
   const filter =
     must.length > 0 || must_not.length > 0
       ? {
