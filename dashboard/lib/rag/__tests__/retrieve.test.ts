@@ -270,11 +270,16 @@ describe('retrieveForDraft H2 — outbound voice priming (STAQPRO-221)', () => {
     delete process.env.RAG_RETRIEVE_TOP_K_INBOUND;
     delete process.env.RAG_RETRIEVE_TOP_K;
     delete process.env.RAG_MIN_INBOUND_CHARS;
+    // STAQPRO-222 (H5) — pin floor to 0 so H2 fixture scores (some below
+    // the new 0.70 default) aren't dropped by the score floor. H5 has its
+    // own dedicated describe block below; this block stays a pure H2 test.
+    process.env.RAG_MIN_SCORE = '0';
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
     delete process.env.MAILBOX_OPERATOR_EMAIL;
+    delete process.env.RAG_MIN_SCORE;
   });
 
   it('runs two Qdrant searches (inbound + outbound) when MAILBOX_OPERATOR_EMAIL set', async () => {
@@ -527,5 +532,297 @@ On Mon, Apr 28, 2026 wrote:
     // Substantive body → embed + search runs → returns no_hits (empty mock),
     // NOT the thin-inbound gate.
     expect(r.reason).toBe('no_hits');
+  });
+});
+
+// =============================================================================
+// STAQPRO-222 — H3 (same-thread suppression) + H5 (score-floor cutoff)
+// =============================================================================
+
+describe('retrieveForDraft H3 — same-thread suppression (STAQPRO-222)', () => {
+  const originalFetch = globalThis.fetch;
+  beforeEach(() => {
+    process.env.OLLAMA_BASE_URL = 'http://test-ollama:11434';
+    process.env.QDRANT_URL = 'http://test-qdrant:6333';
+    delete process.env.RAG_DISABLED;
+    delete process.env.RAG_CLOUD_ROUTE_ENABLED;
+    delete process.env.RAG_MIN_INBOUND_CHARS;
+    delete process.env.RAG_RETRIEVE_EXCLUDE_SAME_THREAD;
+    delete process.env.RAG_MIN_SCORE;
+    delete process.env.MAILBOX_OPERATOR_EMAIL;
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it('sends must_not thread_id filter when thread_id supplied (default-on)', async () => {
+    // Default RAG_RETRIEVE_EXCLUDE_SAME_THREAD unset → on. Filter should fire.
+    const captured: { value: unknown } = { value: null };
+    mockEmbedAndSearch({ hits: [], capturedSearchBody: captured });
+
+    await retrieveForDraft({
+      ...baseInput,
+      draft_source: 'local',
+      thread_id: 'thread-abc',
+    });
+
+    const body = captured.value as {
+      filter?: {
+        must_not?: Array<{ has_id?: string[]; key?: string; match?: { value?: string } }>;
+      };
+    } | null;
+    const clauses = body?.filter?.must_not ?? [];
+    const threadClause = clauses.find((c) => c.key === 'thread_id');
+    expect(threadClause?.match?.value).toBe('thread-abc');
+    // STAQPRO-219 self-filter must still be present alongside.
+    const hasIdClause = clauses.find((c) => Array.isArray(c.has_id));
+    expect(hasIdClause?.has_id).toEqual([SELF_POINT_ID]);
+  });
+
+  it('omits thread_id filter when RAG_RETRIEVE_EXCLUDE_SAME_THREAD=0 (off)', async () => {
+    process.env.RAG_RETRIEVE_EXCLUDE_SAME_THREAD = '0';
+    const captured: { value: unknown } = { value: null };
+    mockEmbedAndSearch({ hits: [], capturedSearchBody: captured });
+
+    await retrieveForDraft({
+      ...baseInput,
+      draft_source: 'local',
+      thread_id: 'thread-abc',
+    });
+
+    const body = captured.value as {
+      filter?: {
+        must_not?: Array<{ has_id?: string[]; key?: string }>;
+      };
+    } | null;
+    const clauses = body?.filter?.must_not ?? [];
+    // No thread_id clause expected.
+    expect(clauses.find((c) => c.key === 'thread_id')).toBeUndefined();
+    // STAQPRO-219 self-filter must still be present.
+    expect(clauses.find((c) => Array.isArray(c.has_id))).toBeDefined();
+  });
+
+  it('omits thread_id filter when thread_id is not supplied (back-compat)', async () => {
+    // Even with flag ON, no thread_id → no filter. Legacy callers retain
+    // pre-222 retrieval behavior.
+    const captured: { value: unknown } = { value: null };
+    mockEmbedAndSearch({ hits: [], capturedSearchBody: captured });
+
+    await retrieveForDraft({ ...baseInput, draft_source: 'local' });
+
+    const body = captured.value as {
+      filter?: {
+        must_not?: Array<{ has_id?: string[]; key?: string }>;
+      };
+    } | null;
+    const clauses = body?.filter?.must_not ?? [];
+    expect(clauses.find((c) => c.key === 'thread_id')).toBeUndefined();
+  });
+
+  it('applies the thread_id filter to BOTH inbound and outbound H2 arms', async () => {
+    process.env.MAILBOX_OPERATOR_EMAIL = 'op@heronlabsinc.com';
+    const captured: unknown[] = [];
+    mockMultiSearch({
+      hitsBySearch: [
+        {
+          filterFingerprint: (f) => hasMustField(f, 'sender', 'cust@example.com'),
+          hits: [],
+        },
+        {
+          filterFingerprint: (f) =>
+            hasMustField(f, 'sender', 'op@heronlabsinc.com') &&
+            hasMustField(f, 'recipient', 'cust@example.com'),
+          hits: [],
+        },
+      ],
+      capturedBodies: captured,
+    });
+
+    await retrieveForDraft({
+      ...baseInputForH2,
+      draft_source: 'local',
+      thread_id: 'thread-xyz',
+    });
+
+    expect(captured.length).toBe(2);
+    for (const body of captured) {
+      const must_not = (
+        body as {
+          filter?: { must_not?: Array<{ key?: string; match?: { value?: string } }> };
+        }
+      )?.filter?.must_not;
+      const threadClause = (must_not ?? []).find((c) => c?.key === 'thread_id');
+      expect(threadClause?.match?.value).toBe('thread-xyz');
+    }
+  });
+});
+
+describe('retrieveForDraft H5 — score-floor cutoff (STAQPRO-222)', () => {
+  const originalFetch = globalThis.fetch;
+  beforeEach(() => {
+    process.env.OLLAMA_BASE_URL = 'http://test-ollama:11434';
+    process.env.QDRANT_URL = 'http://test-qdrant:6333';
+    delete process.env.RAG_DISABLED;
+    delete process.env.RAG_CLOUD_ROUTE_ENABLED;
+    delete process.env.RAG_MIN_INBOUND_CHARS;
+    delete process.env.RAG_RETRIEVE_EXCLUDE_SAME_THREAD;
+    delete process.env.RAG_MIN_SCORE;
+    delete process.env.MAILBOX_OPERATOR_EMAIL;
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("returns reason='below_score_floor' when every hit scores below the default 0.70", async () => {
+    mockEmbedAndSearch({
+      hits: [
+        {
+          id: 'pid-low-1',
+          score: 0.69,
+          payload: {
+            message_id: 'm1',
+            sender: 'cust@example.com',
+            subject: 'borderline',
+            body_excerpt: '...',
+            sent_at: '2026-04-01T09:00:00Z',
+            direction: 'inbound',
+          },
+        },
+        {
+          id: 'pid-low-2',
+          score: 0.55,
+          payload: {
+            message_id: 'm2',
+            sender: 'cust@example.com',
+            subject: 'lower',
+            body_excerpt: '...',
+            sent_at: '2026-03-01T09:00:00Z',
+            direction: 'inbound',
+          },
+        },
+      ],
+    });
+
+    const r = await retrieveForDraft({ ...baseInput, draft_source: 'local' });
+    expect(r.reason).toBe('below_score_floor');
+    expect(r.refs).toEqual([]);
+  });
+
+  it('drops sub-floor hits and keeps survivors when the result is mixed', async () => {
+    mockEmbedAndSearch({
+      hits: [
+        {
+          id: 'pid-keep',
+          score: 0.78,
+          payload: {
+            message_id: 'm-keep',
+            sender: 'cust@example.com',
+            subject: 'above floor',
+            body_excerpt: 'survives',
+            sent_at: '2026-04-01T09:00:00Z',
+            direction: 'inbound',
+          },
+        },
+        {
+          id: 'pid-drop',
+          score: 0.5,
+          payload: {
+            message_id: 'm-drop',
+            sender: 'cust@example.com',
+            subject: 'below floor',
+            body_excerpt: 'dropped',
+            sent_at: '2026-03-01T09:00:00Z',
+            direction: 'inbound',
+          },
+        },
+      ],
+    });
+
+    const r = await retrieveForDraft({ ...baseInput, draft_source: 'local' });
+    expect(r.reason).toBe('ok');
+    expect(r.refs.map((x) => x.point_id)).toEqual(['pid-keep']);
+  });
+
+  it('honors RAG_MIN_SCORE override (lowered floor keeps more)', async () => {
+    process.env.RAG_MIN_SCORE = '0.50';
+    mockEmbedAndSearch({
+      hits: [
+        {
+          id: 'pid-mid',
+          score: 0.65,
+          payload: {
+            message_id: 'm-mid',
+            sender: 'cust@example.com',
+            subject: 'mid',
+            body_excerpt: 'kept-at-0.50',
+            sent_at: '2026-04-01T09:00:00Z',
+            direction: 'inbound',
+          },
+        },
+      ],
+    });
+
+    const r = await retrieveForDraft({ ...baseInput, draft_source: 'local' });
+    // At default 0.70 this would be below_score_floor; at 0.50 it survives.
+    expect(r.reason).toBe('ok');
+    expect(r.refs.map((x) => x.point_id)).toEqual(['pid-mid']);
+  });
+
+  it("returns 'no_hits' (not 'below_score_floor') when Qdrant returned nothing", async () => {
+    // Empty hits distinguishes from "Qdrant returned borderline relevant
+    // matches we chose to drop." The eval surface needs both states.
+    mockEmbedAndSearch({ hits: [] });
+    const r = await retrieveForDraft({ ...baseInput, draft_source: 'local' });
+    expect(r.reason).toBe('no_hits');
+  });
+
+  it('boundary case: hit at exactly RAG_MIN_SCORE survives (>=)', async () => {
+    // Inclusive floor: refs with score === minScore are kept (consistent
+    // with the issue's `r.score >= minScore` reference snippet).
+    mockEmbedAndSearch({
+      hits: [
+        {
+          id: 'pid-boundary',
+          score: 0.7,
+          payload: {
+            message_id: 'm-boundary',
+            sender: 'cust@example.com',
+            subject: 'at floor',
+            body_excerpt: 'survives at-floor',
+            sent_at: '2026-04-01T09:00:00Z',
+            direction: 'inbound',
+          },
+        },
+      ],
+    });
+    const r = await retrieveForDraft({ ...baseInput, draft_source: 'local' });
+    expect(r.reason).toBe('ok');
+    expect(r.refs.map((x) => x.point_id)).toEqual(['pid-boundary']);
+  });
+
+  it('falls back to 0.70 when RAG_MIN_SCORE is malformed', async () => {
+    // NaN guard — operator typos shouldn't open the floor wide.
+    process.env.RAG_MIN_SCORE = 'not-a-number';
+    mockEmbedAndSearch({
+      hits: [
+        {
+          id: 'pid-low',
+          score: 0.65,
+          payload: {
+            message_id: 'm-low',
+            sender: 'cust@example.com',
+            subject: 's',
+            body_excerpt: '...',
+            sent_at: '2026-04-01T09:00:00Z',
+            direction: 'inbound',
+          },
+        },
+      ],
+    });
+    const r = await retrieveForDraft({ ...baseInput, draft_source: 'local' });
+    // At fallback 0.70 the 0.65 hit is dropped.
+    expect(r.reason).toBe('below_score_floor');
   });
 });

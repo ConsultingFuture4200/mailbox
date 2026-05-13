@@ -83,7 +83,14 @@ export type EmailRetrievalReason =
   // degenerated and pulled noise refs. Threshold via RAG_MIN_INBOUND_CHARS,
   // default 40. App-side enum — no DB CHECK constraint per migration 013's
   // explicit "Enum stays application-side" note.
-  | 'inbound_too_thin';
+  | 'inbound_too_thin'
+  // STAQPRO-222 (H5) — set when every hit returned by the merged email
+  // search scored below `RAG_MIN_SCORE`. Distinct from `'no_hits'` so
+  // telemetry can tell "Qdrant returned nothing" apart from "Qdrant
+  // returned borderline-relevant matches we chose to drop." Threshold
+  // tunable via RAG_MIN_SCORE (default 0.70). App-side enum — same
+  // migration 013 rule as the other Phase-D reasons.
+  | 'below_score_floor';
 
 // Distinct from EmailRetrievalReason on the cloud-gated value
 // ('kb_cloud_gated' vs 'cloud_gated') so the eval surface can tell them
@@ -132,6 +139,15 @@ export interface RetrievalInput {
   // and legacy callers may not have a message_id handy — when omitted,
   // self-filtering is skipped.
   message_id?: string | null;
+  // STAQPRO-222 (H3) — Gmail thread_id of the inbound. When provided AND
+  // `RAG_RETRIEVE_EXCLUDE_SAME_THREAD=1` (default on), retrieval drops
+  // every point in the same conversation thread on BOTH the inbound and
+  // outbound Qdrant searches. Phase-B inspection found top-3 refs were
+  // routinely all from the same thread — duplicating context the drafter
+  // already has via the quoted-history chain on the inbound body. Optional
+  // for back-compat: legacy callers without a thread_id retain pre-222
+  // behavior (no thread-suppression filter).
+  thread_id?: string | null;
 }
 
 function topK(): number {
@@ -155,6 +171,33 @@ function topKInbound(): number {
 // 19b0ed17519285b1 was 2 chars of fresh content under 4kb of quote chain).
 function minInboundChars(): number {
   return Number(process.env.RAG_MIN_INBOUND_CHARS ?? 40);
+}
+
+// STAQPRO-222 (H5) — score-floor cutoff. After H1 self-filter, H2 outbound +
+// inbound merge, H4 strip-quoted, and the existing top-K cap, drop refs
+// scoring below this threshold. Below ~0.70 cosine, refs tend to surface
+// borderline-relevant context that confuses tone more than it helps (Phase-B
+// outlier 19ba502acb1edbf5 had refs at 0.690 + 0.664 from a different product
+// line, with-RAG cosine dropped 12pp vs no-RAG). NaN parse defends against
+// a malformed env value (returns 0.70 — the conservative default).
+//
+// Sweep range per the ticket: {0.60, 0.65, 0.70, 0.75}. Default after sweep
+// is whichever threshold maximizes judge_score with non-negative cosine Δ.
+function minScore(): number {
+  const parsed = Number.parseFloat(process.env.RAG_MIN_SCORE ?? '0.70');
+  return Number.isFinite(parsed) ? parsed : 0.7;
+}
+
+// STAQPRO-222 (H3) — same-thread suppression flag. Default '1' (on).
+// Phase-B inspection found top-3 refs were routinely all from the same
+// conversation thread, duplicating context the drafter already has via the
+// inbound body's quoted-history chain. H4 strips quotes on the EMBED side,
+// but doesn't stop the RETRIEVAL side from surfacing same-thread points
+// scored against the substantive fragment. This flag adds the corresponding
+// retrieval-side filter. Off-state preserves pre-222 behavior so eval can
+// A/B isolate the value.
+function excludeSameThread(): boolean {
+  return process.env.RAG_RETRIEVE_EXCLUDE_SAME_THREAD !== '0';
 }
 
 // STAQPRO-221 (H2) — single-tenant operator email source. Read at call time
@@ -306,11 +349,18 @@ export async function retrieveForDraft(input: RetrievalInput): Promise<Retrieval
     warnOperatorEmailMissing();
   }
 
+  // STAQPRO-222 (H3) — same-thread suppression. Compute once and reuse on
+  // both inbound and outbound searches. Only applied when a thread_id was
+  // supplied AND the flag is on (default on); legacy callers without a
+  // thread_id retain pre-222 behavior.
+  const excludeThreadId = input.thread_id && excludeSameThread() ? input.thread_id : undefined;
+
   const inboundSearchP = searchByVector(vector, {
     limit: topKInbound(),
     senderFilter: normalizedSender,
     personaKey: input.persona_key,
     excludePointId: selfPointId,
+    excludeThreadId,
   });
   const outboundSearchP = outboundSearchEnabled
     ? searchByVector(vector, {
@@ -319,6 +369,7 @@ export async function retrieveForDraft(input: RetrievalInput): Promise<Retrieval
         recipientFilter: normalizedSender,
         personaKey: input.persona_key,
         excludePointId: selfPointId,
+        excludeThreadId,
       })
     : Promise.resolve(null);
 
@@ -331,6 +382,14 @@ export async function retrieveForDraft(input: RetrievalInput): Promise<Retrieval
   const emailSearch = mergeEmailSearches(inboundSearch, outboundSearch, topK());
 
   // Email refs.
+  // STAQPRO-222 (H5) — score-floor is applied AFTER:
+  //   1. H1 self-filter (must_not.has_id, in searchByVector)
+  //   2. H3 same-thread filter (must_not.thread_id, in searchByVector)
+  //   3. H2 inbound + outbound merge + topK cap (mergeEmailSearches)
+  // and BEFORE reason resolution, so an all-below-floor result becomes
+  // `'below_score_floor'` (distinct from `'no_hits'`) and an all-above-
+  // floor result is unaffected.
+  const floor = minScore();
   let emailReason: EmailRetrievalReason;
   let refs: RetrievalRef[];
   if (!emailSearch.ok) {
@@ -340,20 +399,26 @@ export async function retrieveForDraft(input: RetrievalInput): Promise<Retrieval
     refs = [];
     emailReason = 'no_hits';
   } else {
-    refs = emailSearch.hits.map((h) => {
-      const dir = h.payload.direction === 'outbound' ? 'we wrote' : 'they wrote';
-      const dateLabel = h.payload.sent_at.slice(0, 10);
-      const subject = h.payload.subject ?? '(no subject)';
-      return {
-        point_id: h.id,
-        source: `${dateLabel} · ${dir} · ${subject}`,
-        excerpt: (h.payload.body_excerpt ?? '').slice(0, excerptCharCap()),
-        score: h.score,
-        direction: h.payload.direction,
-        sent_at: h.payload.sent_at,
-      };
-    });
-    emailReason = 'ok';
+    const survivors = emailSearch.hits.filter((h) => h.score >= floor);
+    if (survivors.length === 0) {
+      refs = [];
+      emailReason = 'below_score_floor';
+    } else {
+      refs = survivors.map((h) => {
+        const dir = h.payload.direction === 'outbound' ? 'we wrote' : 'they wrote';
+        const dateLabel = h.payload.sent_at.slice(0, 10);
+        const subject = h.payload.subject ?? '(no subject)';
+        return {
+          point_id: h.id,
+          source: `${dateLabel} · ${dir} · ${subject}`,
+          excerpt: (h.payload.body_excerpt ?? '').slice(0, excerptCharCap()),
+          score: h.score,
+          direction: h.payload.direction,
+          sent_at: h.payload.sent_at,
+        };
+      });
+      emailReason = 'ok';
+    }
   }
 
   // KB refs.
