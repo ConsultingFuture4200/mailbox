@@ -17,7 +17,7 @@
 #   ./scripts/provision-customer-dns.sh --dry-run <customer-slug> <lan-ip>
 #
 # EXAMPLES
-#   # Create staqs.mailbox.staqsmail.com → 192.168.50.11
+#   # Create staqs.mailbox.staqs.io → 192.168.50.11
 #   ./scripts/provision-customer-dns.sh staqs 192.168.50.11
 #
 #   # Preview without hitting the Cloudflare API
@@ -29,7 +29,7 @@
 #                          NEVER commit this. NEVER paste into Slack/email.
 #   CLOUDFLARE_ZONE_ID     Zone ID of the parent Staqs-owned domain.
 #                          Cloudflare dashboard → zone overview → right sidebar.
-#   MAILBOX_SHARED_DOMAIN  The Staqs-owned shared root (e.g. staqsmail.com).
+#   MAILBOX_SHARED_DOMAIN  The Staqs-owned shared root (staqs.io).
 #                          The final hostname is <slug>.mailbox.$MAILBOX_SHARED_DOMAIN.
 #
 # OPTIONAL ENV
@@ -74,7 +74,7 @@ LAN_IP="$2"
 # ── env validation ───────────────────────────────────────────────────────────
 : "${CLOUDFLARE_API_TOKEN:?CLOUDFLARE_API_TOKEN is required (Zone:DNS:Edit scope)}"
 : "${CLOUDFLARE_ZONE_ID:?CLOUDFLARE_ZONE_ID is required (Cloudflare zone overview → Zone ID)}"
-: "${MAILBOX_SHARED_DOMAIN:?MAILBOX_SHARED_DOMAIN is required (the Staqs-owned root, e.g. staqsmail.com)}"
+: "${MAILBOX_SHARED_DOMAIN:?MAILBOX_SHARED_DOMAIN is required (the Staqs-owned root, staqs.io)}"
 
 CF_RECORD_TTL="${CF_RECORD_TTL:-60}"
 CF_RECORD_COMMENT="${CF_RECORD_COMMENT:-MailBOX appliance — STAQPRO-183}"

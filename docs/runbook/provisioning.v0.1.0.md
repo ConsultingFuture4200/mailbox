@@ -115,7 +115,7 @@ Hostname: `<customer-slug>.mailbox.<MAILBOX_SHARED_DOMAIN>` → appliance LAN IP
 - [ ] On the provisioner workstation, set in `.env`:
       - `CLOUDFLARE_API_TOKEN` — Zone → DNS → Edit on the parent zone only
       - `CLOUDFLARE_ZONE_ID` — from CF dashboard → zone overview → right sidebar
-      - `MAILBOX_SHARED_DOMAIN` — the chosen Staqs-owned root (e.g. `staqsmail.com` — placeholder until NC-25 registration lands)
+      - `MAILBOX_SHARED_DOMAIN` — `staqs.io` (Staqs-owned shared root, locked in for NC-25)
 - [ ] Dry-run first to confirm hostname assembly + zone-cover check:
       ```bash
       ./scripts/provision-customer-dns.sh --dry-run <customer-slug> <lan-ip>
@@ -146,7 +146,7 @@ Hostname: `mailbox.<customer-domain>` (e.g. `mailbox.heronlabsinc.com`). Custome
 
 `TODO:` Record exact Cloudflare token-create UI clicks for Pattern A (token templates change; screenshot once and version).
 
-`TODO:` (NC-25 follow-up) Lock in the actual `MAILBOX_SHARED_DOMAIN` once Staqs registers it. Until then the placeholder is `staqsmail.com` — replace globally in this runbook + `CLAUDE.md` "Per-customer subdomain pattern" subsection when the real value is chosen.
+`MAILBOX_SHARED_DOMAIN` is `staqs.io` — locked in for NC-25 (STAQPRO-183). Zone provisioning + scoped Cloudflare token issuance for `staqs.io` are tracked in the NC-25 live cutover follow-up issue.
 
 ---
 
