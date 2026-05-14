@@ -63,6 +63,44 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+  # STAQPRO-338 / DR-25 — llama.cpp ARM64+CUDA inference server for T2.
+  # Inactive at LOCAL_INFERENCE_RUNTIME=ollama (current default); activated
+  # by flipping the env in dashboard service + having llama-cpp running.
+  # No `ports:` block — internal docker network only; workstation access
+  # via tailnet+ssh tunnel. Mirrors M2's tighter binding model.
+  llama-cpp:
+    image: ${LLAMA_CPP_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
+    runtime: nvidia
+    environment:
+      # Tegra driver (540.x) doesn't match the upstream image's CUDA
+      # driver-version allowlist (expects desktop NVIDIA drivers
+      # 470/535/550/560/565). Bypass the check — Jetson's CUDA stack
+      # delivers compute capability 8.7 correctly regardless.
+      NVIDIA_DISABLE_REQUIRE: "1"
+    command:
+      - "--model"
+      - "/models/Qwen3-4B-Q4_K_M.gguf"
+      - "--ctx-size"
+      - "4096"
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8080"
+      - "--n-gpu-layers"
+      - "99"
+      - "--no-mmap"
+      - "--slots"
+    volumes:
+      - ./llama-cpp-models:/models:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - bash -c 'cat < /dev/null > /dev/tcp/localhost/8080' 2>/dev/null || exit 1
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
   n8n:
     image: n8nio/n8n:2.14.2
     environment:
