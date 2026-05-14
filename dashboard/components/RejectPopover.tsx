@@ -104,7 +104,7 @@ export function RejectPopover({ open, busy, onClose, onSubmit }: Props) {
   return (
     <div
       ref={ref}
-      className="absolute bottom-full right-0 z-20 mb-2 w-80 rounded-md border border-border-subtle bg-bg-panel p-3 shadow-xl"
+      className="absolute top-full right-0 z-20 mt-2 w-80 rounded-md border border-border-subtle bg-bg-panel p-3 shadow-xl"
       role="dialog"
       aria-label="Reject draft"
     >
