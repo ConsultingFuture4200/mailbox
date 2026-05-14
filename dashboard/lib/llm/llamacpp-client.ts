@@ -101,7 +101,11 @@ export function completionResponseToOllama(
   const promptMs = readNumber(t.prompt_ms);
   const predictedMs = readNumber(t.predicted_ms);
   const out: OllamaGenerateResponse = {
-    model: res.model ?? modelName,
+    // STAQPRO-361: llama-cpp returns hardcoded `model: "gpt-3.5-turbo"` in its
+    // response envelope. Override with the configured LLAMA_CPP_MODEL so
+    // downstream telemetry (drafts.model, classification_log.model_version)
+    // reflects what actually served the request.
+    model: modelName,
     created_at: new Date().toISOString(),
     response: res.content,
     done: true,
@@ -134,7 +138,11 @@ export function openAIResponseToOllamaChat(
   const promptMs = readNumber(timings.prompt_ms);
   const predictedMs = readNumber(timings.predicted_ms);
   const out: OllamaChatResponse = {
-    model: res.model ?? modelName,
+    // STAQPRO-361: llama-cpp returns hardcoded `model: "gpt-3.5-turbo"` in its
+    // response envelope. Override with the configured LLAMA_CPP_MODEL so
+    // downstream telemetry (drafts.model, classification_log.model_version)
+    // reflects what actually served the request.
+    model: modelName,
     created_at: new Date().toISOString(),
     message: {
       role: 'assistant',
