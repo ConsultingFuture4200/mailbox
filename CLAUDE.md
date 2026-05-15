@@ -481,7 +481,17 @@ hit this on the original deploy and STAQPRO-181 (n8n `1.123.35 → 2.14.2`,
 2026-05-01) re-introduced the gap, dark-classifying ~12h of inbox before it
 was caught.
 
-Verification one-liner — run after every n8n change:
+**Canonical guardrail (audit 2026-05-15)** — `mailbox-n8n-verify` compose
+profile. Exits 0 when all four `MailBOX*` workflows are `active=t`, exits
+1 when any are missing or inactive (with a clear rollup of which), exits
+2 on connection error. Safe to re-run; read-only against `workflow_entity`.
+
+    ssh mailbox1 "cd ~/mailbox && docker compose --profile n8n-verify run --rm mailbox-n8n-verify"
+
+Source: `dashboard/scripts/n8n-verify.ts`. Use this in install runbooks
+and OTA scripts — the non-zero exit code is the gate.
+
+Manual fallback (no compose profile available, e.g. raw psql access):
 
     ssh mailbox1 "docker exec mailbox-postgres-1 psql \
       -U \$(grep ^POSTGRES_USER /home/bob/mailbox/.env | cut -d= -f2-) \
@@ -492,8 +502,8 @@ All four (`MailBOX`, `MailBOX-Classify`, `MailBOX-Draft`, `MailBOX-Send`)
 must show `active = t`. The dashboard `/status` page also surfaces this via
 the **Classify lag** Stat — green ("caught up") when no unclassified
 inbox_messages in the last 24h, red when the oldest unclassified row is
-older than 15 min. Use the Stat as the always-on guardrail; use the psql
-one-liner as the deploy gate.
+older than 15 min. Use the Stat as the always-on guardrail; use the
+`mailbox-n8n-verify` profile as the deploy gate.
 
 Activation runbook (post-import): toggle Active on each sub-workflow in the
 n8n editor (`http://mailbox1:5678`), or via CLI:
