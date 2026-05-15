@@ -37,6 +37,7 @@
 
 import { sql } from 'kysely';
 import { getKysely, getPool } from '@/lib/db';
+import { withJobRun } from '@/lib/jobs/job-runs';
 
 // Advisory lock keys are global across the database — each sweeper owns its
 // own integer. Map (audit 2026-05-15):
@@ -309,7 +310,7 @@ export function startStuckStubSweeper(intervalMs = DEFAULT_INTERVAL_MS): void {
   if (intervalHandle) return;
   console.log(`[stuck-stub-sweeper] starting (interval=${intervalMs}ms)`);
   intervalHandle = setInterval(() => {
-    runStuckStubSweeperTick().catch((e: unknown) => {
+    withJobRun('stuck-stub-sweeper', runStuckStubSweeperTick).catch((e: unknown) => {
       console.error('[stuck-stub-sweeper] tick error:', e instanceof Error ? e.message : String(e));
     });
   }, intervalMs);

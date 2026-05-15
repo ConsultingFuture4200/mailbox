@@ -24,6 +24,7 @@ import { sql } from 'kysely';
 import { normalizeClassifierOutput } from '@/lib/classification/normalize';
 import { buildPrompt, MODEL_VERSION } from '@/lib/classification/prompt';
 import { getKysely } from '@/lib/db';
+import { withJobRun } from '@/lib/jobs/job-runs';
 
 const OLLAMA_URL = process.env.OLLAMA_BASE_URL ?? 'http://ollama:11434';
 const LOCK_KEY = 7234567; // arbitrary 32-bit int, scoped to this sweeper
@@ -178,7 +179,7 @@ export function startClassifySweeper(intervalMs = DEFAULT_INTERVAL_MS): void {
   if (intervalHandle) return;
   console.log(`[classify-sweeper] starting (interval=${intervalMs}ms)`);
   intervalHandle = setInterval(() => {
-    runSweeperTick().catch((e: unknown) => {
+    withJobRun('classify-sweeper', runSweeperTick).catch((e: unknown) => {
       console.error('[classify-sweeper] tick error:', e instanceof Error ? e.message : String(e));
     });
   }, intervalMs);
