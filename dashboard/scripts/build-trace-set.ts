@@ -21,7 +21,8 @@
 //     (STAQPRO-340.1).
 //   - Commit the actual trace JSONL into git. The output directory should be
 //     gitignored — `manifest.json` is committed; the `*.trace.json` files
-//     live on the operator's workstation. See `eval/t2-traces/v1.0/README.md`.
+//     live on the operator's workstation. See `eval/t2-traces/v1.1/README.md`
+//     (or the historical `v1.0/README.md` for the pre-STAQPRO-365 baseline).
 //
 // Privacy: bodies are scrubbed via `lib/rag/scrub.ts:scrubPII` (phone, SSN,
 // 16-digit card → tokens). Email addresses, URLs, and names are NOT scrubbed
@@ -34,14 +35,23 @@
 //
 //   POSTGRES_URL=postgresql://mailbox:<pw>@localhost:5432/mailbox \
 //     npx tsx scripts/build-trace-set.ts \
-//       --out eval/t2-traces/v1.0 \
-//       --set-version v1.0 \
+//       --out eval/t2-traces/v1.1 \
+//       --set-version v1.1 \
 //       --appliance mailbox1 \
-//       --limit 50
+//       --limit 100
 //
 // Idempotent: re-runs against the same source DB rows produce byte-identical
 // trace JSON (modulo the `extracted_at` timestamp in provenance, which the
 // script keeps stable when `--extracted-at <iso>` is supplied).
+//
+// STAQPRO-365 (v1.1): adds two corpus-quality filters to `buildSourceSql`:
+//   - drops rows whose `sent_history.draft_sent` looks like a forwarded
+//     message or an inline quote-block reply (heuristic regex on the body
+//     after the first 100 chars — false negatives OK, false positives bad);
+//   - dedupes on `im.id` via `DISTINCT ON`, preferring non-forwarded → longest
+//     body → earliest `sent_at` so a single canonical reply represents each
+//     inbound. See `dashboard/eval/t2-traces/v1.1/README.md` for the v1.0 → v1.1
+//     deltas and rationale.
 
 import { createHash } from 'node:crypto';
 import { mkdir, readdir, unlink, writeFile } from 'node:fs/promises';
@@ -75,8 +85,12 @@ interface ParsedArgs {
 }
 
 function parseArgs(argv: readonly string[]): ParsedArgs {
-  let out = 'eval/t2-traces/v1.0';
-  let setVersion = 'v1.0';
+  // Defaults updated to v1.1 (STAQPRO-365). Operator can still target v1.0 by
+  // passing `--out eval/t2-traces/v1.0 --set-version v1.0` explicitly, but the
+  // v1.1 SQL filters are baked in — the v1.0 directory will receive
+  // forwarded-filtered + dedup'd traces, NOT the byte-identical v1.0 set.
+  let out = 'eval/t2-traces/v1.1';
+  let setVersion = 'v1.1';
   let appliance = process.env.MAILBOX_APPLIANCE_ID ?? 'unknown';
   let limit = 50;
   let extractedAt = new Date().toISOString();
@@ -159,37 +173,109 @@ interface SourceRow {
 }
 
 /**
- * SQL mirrors `dashboard/scripts/rag-eval-harness.ts:buildSampleSql` so the
- * trace set covers exactly the rows the existing DB-driven eval would have
- * selected — only difference is we cap at `limit` and apply a stratified
- * ORDER BY so categories aren't all from the same time window.
+ * Forwarded / quote-block heuristic (STAQPRO-365).
  *
- * Stratification: NULLs sort last in ASC, so unclassified pairs end up at
- * the tail rather than dominating the head. Within each classification the
- * order is by `sent_at` ASC (oldest first) — same convention as the
- * existing harness for reproducibility.
+ * Matches the first non-whitespace token after the 100th character of
+ * `sent_history.draft_sent`. If that token looks like a forward separator
+ * (`---+`), a "On <Day>, <Person> wrote:" quote header, or an inline quote
+ * marker (`>`), we mark the row as forwarded/quoted and either drop it or
+ * deprioritize it.
+ *
+ * Bias: false negatives OK (a few forwards leaking through), false positives
+ * bad (a real reply that happens to contain `---` or `>` in its body
+ * MUST NOT be dropped). The 100-char offset guarantees we don't trip on
+ * a reply that opens with `---` then has a real message below — and the
+ * regex anchors to start-of-line (after whitespace) so prose containing
+ * `---` mid-paragraph is safe.
+ *
+ * SQL regex syntax: Postgres POSIX. `\m` is word-boundary,
+ * `[[:space:]]` is whitespace, capture groups not needed.
+ *
+ * Note: keep the literal regex string in sync with the JS-side validation
+ * regex in `test/scripts/build-trace-set.test.ts` (the test asserts both
+ * sides reject the same fixtures).
+ */
+const FORWARDED_BODY_REGEX_SQL =
+  String.raw`^[[:space:]]*(-{3,}|On[[:space:]]+\w+,?[[:space:]]+\w+|>{1,})`;
+
+/**
+ * SQL is structured in two layers per STAQPRO-365:
+ *
+ *   1. `candidates` CTE — applies the v1.0 join + the new forwarded filter
+ *      (rows whose tail body matches the FORWARDED regex are dropped). Also
+ *      computes `is_forwarded_head` (whether the *head* of the body — first
+ *      100 chars — looks forwarded) and `body_len` for the dedup ORDER BY.
+ *      Forwarded-head detection is permissive (no SUBSTR offset) so it
+ *      catches forwards even when the tail wouldn't.
+ *
+ *   2. The outer `SELECT DISTINCT ON (im.id)` picks one row per inbound,
+ *      preferring (a) non-forwarded head, (b) longest body, (c) earliest
+ *      `sent_at`. The outer `ORDER BY` then re-sorts the chosen rows by
+ *      classification ASC NULLS LAST + sent_at ASC for the limit cut —
+ *      same stratification as v1.0.
+ *
+ * Why the WHERE-clause regex uses SUBSTR offset 100 but the column
+ * `is_forwarded_head` does not: the WHERE clause is the "drop entirely"
+ * filter and we want it conservative (only kill rows whose forward signal
+ * appears mid-body, after a likely-real header). The column is just a
+ * priority hint inside the dedup ORDER BY — false positives there are
+ * fine because the rest of the priority chain (body_len, sent_at) still
+ * picks a sensible row.
+ *
+ * Stratification at the tail: NULLs sort last in ASC, so unclassified pairs
+ * end up at the tail rather than dominating the head. Within each
+ * classification the order is by `sent_at` ASC (oldest first) — same
+ * convention as the existing harness for reproducibility.
  */
 function buildSourceSql(limit: number): string {
   return `
+    WITH candidates AS (
+      SELECT
+        sh.id                          AS sent_history_id,
+        im.id                          AS inbox_id,
+        im.message_id                  AS inbox_message_id,
+        im.thread_id                   AS inbox_thread_id,
+        im.from_addr                   AS inbox_from,
+        im.subject                     AS inbox_subject,
+        im.body                        AS inbox_body,
+        im.classification              AS inbox_classification,
+        im.confidence                  AS inbox_confidence,
+        sh.draft_sent                  AS actual_reply_body,
+        sh.sent_at                     AS reply_sent_at,
+        char_length(sh.draft_sent)     AS body_len,
+        (sh.draft_sent ~ '${FORWARDED_BODY_REGEX_SQL}') AS is_forwarded_head
+      FROM mailbox.sent_history sh
+      JOIN mailbox.inbox_messages im ON im.id = sh.inbox_message_id
+      WHERE sh.source = 'backfill'
+        AND sh.inbox_message_id IS NOT NULL
+        AND COALESCE(sh.draft_sent, '') <> ''
+        AND COALESCE(im.body, '') <> ''
+        -- STAQPRO-365 forwarded filter. Look for forward/quote markers in
+        -- the body AFTER the first 100 chars: that's how forwarded messages
+        -- present in this corpus (operator preface + separator + chain).
+        -- A reply that genuinely opens with three dashes is fine because we
+        -- anchor the regex to the offset-100 tail, not the head.
+        AND SUBSTRING(sh.draft_sent FROM 101) !~ '${FORWARDED_BODY_REGEX_SQL}'
+    )
     SELECT
-      sh.id                          AS sent_history_id,
-      im.id                          AS inbox_id,
-      im.message_id                  AS inbox_message_id,
-      im.thread_id                   AS inbox_thread_id,
-      im.from_addr                   AS inbox_from,
-      im.subject                     AS inbox_subject,
-      im.body                        AS inbox_body,
-      im.classification              AS inbox_classification,
-      im.confidence                  AS inbox_confidence,
-      sh.draft_sent                  AS actual_reply_body,
-      sh.sent_at                     AS reply_sent_at
-    FROM mailbox.sent_history sh
-    JOIN mailbox.inbox_messages im ON im.id = sh.inbox_message_id
-    WHERE sh.source = 'backfill'
-      AND sh.inbox_message_id IS NOT NULL
-      AND COALESCE(sh.draft_sent, '') <> ''
-      AND COALESCE(im.body, '') <> ''
-    ORDER BY im.classification ASC NULLS LAST, sh.sent_at ASC
+      sent_history_id, inbox_id, inbox_message_id, inbox_thread_id,
+      inbox_from, inbox_subject, inbox_body,
+      inbox_classification, inbox_confidence,
+      actual_reply_body, reply_sent_at
+    FROM (
+      SELECT DISTINCT ON (inbox_id) *
+      FROM candidates
+      -- Per-inbound canonical pick: non-forwarded head wins over forwarded,
+      -- then longest body (more signal), then earliest reply (closest to
+      -- the inbound — most contextually relevant). All deterministic so
+      -- re-runs are byte-identical.
+      ORDER BY inbox_id,
+               is_forwarded_head ASC,    -- false < true → non-forwarded first
+               body_len DESC,
+               reply_sent_at ASC,
+               sent_history_id ASC        -- final tiebreak for stability
+    ) deduped
+    ORDER BY inbox_classification ASC NULLS LAST, reply_sent_at ASC
     LIMIT ${Math.max(1, Math.floor(limit))}
   `;
 }
@@ -366,4 +452,4 @@ if (isDirect) {
 
 export type { ParsedArgs, SourceRow };
 // Exports for unit tests
-export { buildSourceSql, parseArgs, rowToTrace };
+export { buildSourceSql, FORWARDED_BODY_REGEX_SQL, parseArgs, rowToTrace };
