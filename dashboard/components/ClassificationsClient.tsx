@@ -7,7 +7,7 @@ import type {
   ClassificationRow,
   DraftOutcome,
 } from '@/lib/queries-classifications';
-import { AppNav } from './AppNav';
+import { AppShell } from './AppShell';
 import { TimeAgo } from './TimeAgo';
 
 const ROUTES: ClassificationRoute[] = ['drop', 'local', 'cloud'];
@@ -43,11 +43,9 @@ export function ClassificationsClient({ initialRows }: { initialRows: Classifica
   const hasFilter = categoryFilter || routeFilter || confidenceFilter;
 
   return (
-    <main className="flex h-screen flex-col bg-bg-deep text-ink">
+    <AppShell active={{ kind: 'surface', surface: 'classifications' }}>
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle bg-bg-panel px-4">
         <div className="flex items-center gap-3">
-          <h1 className="font-sans text-sm font-semibold tracking-tight">MailBox One</h1>
-          <AppNav active="classifications" />
           <span className="rounded-full border border-border bg-bg-deep px-2 py-0.5 font-mono text-[11px] tabular-nums text-ink-muted">
             {filtered.length}
             {filtered.length !== initialRows.length ? ` / ${initialRows.length}` : ''}
@@ -170,7 +168,7 @@ export function ClassificationsClient({ initialRows }: { initialRows: Classifica
           </table>
         )}
       </div>
-    </main>
+    </AppShell>
   );
 }
 

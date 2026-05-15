@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { apiUrl } from '@/lib/api';
 import type { Persona } from '@/lib/types';
-import { AppNav } from './AppNav';
+import { AppShell } from './AppShell';
 import { TimeAgo } from './TimeAgo';
 import { Toast } from './Toast';
 
@@ -84,12 +84,10 @@ export function PersonaSettings({ initial }: { initial: Persona | null }) {
   }
 
   return (
-    <main className="flex h-screen flex-col bg-bg-deep text-ink">
+    <AppShell active={{ kind: 'surface', surface: 'settings' }}>
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle bg-bg-panel px-4">
         <div className="flex items-center gap-3">
-          <h1 className="font-sans text-sm font-semibold tracking-tight">MailBox One</h1>
-          <AppNav active="settings" />
-          <span className="font-mono text-[11px] text-ink-dim">/ Persona</span>
+          <span className="font-mono text-[11px] text-ink-dim">Persona</span>
         </div>
       </header>
 
@@ -163,7 +161,7 @@ export function PersonaSettings({ initial }: { initial: Persona | null }) {
       </div>
 
       {toast && <Toast {...toast} onDismiss={() => setToast(null)} />}
-    </main>
+    </AppShell>
   );
 }
 

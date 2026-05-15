@@ -1,4 +1,4 @@
-import { AppNav } from '@/components/AppNav';
+import { AppShell } from '@/components/AppShell';
 import { apiUrl } from '@/lib/api';
 import { listKbDocuments } from '@/lib/queries-kb';
 import { getTopEditRateCategories, type TopEditRateCategory } from '@/lib/queries-status';
@@ -54,15 +54,8 @@ export default async function SettingsKbPage() {
   const insufficientSignal = topCategories.length === 0 || totalDisposed < MIN_TOTAL_FOR_SIGNAL;
 
   return (
-    <main className="flex min-h-screen flex-col bg-bg-deep text-ink">
-      <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle bg-bg-panel px-4">
-        <div className="flex items-center gap-3">
-          <h1 className="font-sans text-sm font-semibold tracking-tight">MailBox One</h1>
-          <AppNav active="settings" />
-        </div>
-      </header>
-
-      <div className="mx-auto w-full max-w-4xl p-4 lg:p-6">
+    <AppShell active={{ kind: 'surface', surface: 'settings' }}>
+      <div className="mx-auto w-full max-w-4xl overflow-y-auto p-4 lg:p-6">
         <section className="mb-6">
           <h2 className="mb-1 font-sans text-base font-semibold">
             Knowledge base — improve your drafts
@@ -175,6 +168,6 @@ export default async function SettingsKbPage() {
           </p>
         </section>
       </div>
-    </main>
+    </AppShell>
   );
 }
