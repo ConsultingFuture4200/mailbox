@@ -1,4 +1,4 @@
-import { AppNav } from '@/components/AppNav';
+import { AppShell } from '@/components/AppShell';
 import {
   type Alert,
   COST_SPIKE_MIN_TRIGGER_USD,
@@ -114,13 +114,12 @@ export default async function StatusPage() {
     <>
       {/* Auto-refresh every 30s. Server-rendered; no client component needed. */}
       <meta httpEquiv="refresh" content="30" />
-      <main className="flex min-h-screen flex-col bg-bg-deep text-ink">
-        {/* Unified header — matches Queue / Classifications / Knowledge Base /
-            Settings (STAQPRO-148 cleanup of pre-AppNav layout drift). */}
+      <AppShell active={{ kind: 'surface', surface: 'status' }}>
+        {/* Page-local header — wordmark + AppNav moved into the Sidebar
+            (STAQPRO-382 Phase 2a). Auto-refresh chip + render timestamp
+            stay here as status-page-specific chrome. */}
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle bg-bg-panel px-4">
           <div className="flex items-center gap-3">
-            <h1 className="font-sans text-sm font-semibold tracking-tight">MailBox One</h1>
-            <AppNav active="status" />
             <span className="rounded-full border border-border bg-bg-deep px-2 py-0.5 font-mono text-[11px] tabular-nums text-ink-muted">
               auto-refresh 30s
             </span>
@@ -130,7 +129,7 @@ export default async function StatusPage() {
           </span>
         </header>
 
-        <div className="mx-auto w-full max-w-7xl p-4 lg:p-6">
+        <div className="mx-auto w-full max-w-7xl overflow-y-auto p-4 lg:p-6">
           {alerts.length > 0 && (
             <section className="mb-6">
               <h2 className="mb-3 font-sans text-sm font-semibold uppercase tracking-wider text-ink-muted">
@@ -409,7 +408,7 @@ export default async function StatusPage() {
             </a>
           </footer>
         </div>
-      </main>
+      </AppShell>
     </>
   );
 }

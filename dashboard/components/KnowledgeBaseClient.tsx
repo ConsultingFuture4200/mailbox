@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiUrl } from '@/lib/api';
 import type { KbDocStatus, KbDocument } from '@/lib/types';
-import { AppNav } from './AppNav';
+import { AppShell } from './AppShell';
 
 // STAQPRO-148 — operator-facing KB management UI.
 //
@@ -163,11 +163,9 @@ export function KnowledgeBaseClient({ initialRows }: { initialRows: KbDocument[]
   );
 
   return (
-    <main className="flex h-screen flex-col bg-bg-deep text-ink">
+    <AppShell active={{ kind: 'surface', surface: 'knowledge-base' }}>
       <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle bg-bg-panel px-4">
         <div className="flex items-center gap-3">
-          <h1 className="font-sans text-sm font-semibold tracking-tight">MailBox One</h1>
-          <AppNav active="knowledge-base" />
           <span className="rounded-full border border-border bg-bg-deep px-2 py-0.5 font-mono text-[11px] tabular-nums text-ink-muted">
             {rows.length} {rows.length === 1 ? 'doc' : 'docs'}
           </span>
@@ -296,7 +294,7 @@ export function KnowledgeBaseClient({ initialRows }: { initialRows: KbDocument[]
           </table>
         )}
       </section>
-    </main>
+    </AppShell>
   );
 }
 
