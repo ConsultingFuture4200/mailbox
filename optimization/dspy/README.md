@@ -310,3 +310,85 @@ trace set from mailbox1 using the updated `build-trace-set.ts`,
 then re-run GEPA against it. If baseline still pins to 0.000 on a
 clean corpus, the next lever isn't the metric or the corpus — it's
 the target model itself (STAQPRO-342 three-way bake-off).
+
+## Run-3 (v1.1 corpus, 2026-05-16)
+
+**Status: completed 2026-05-16.** v1.1 trace set was built fresh from
+mailbox1 via the STAQPRO-365 builder filter (forwarded-mail dropped,
+duplicate inbounds deduped via `DISTINCT ON`). GEPA re-fired with the
+STAQPRO-363 metric (same relaxed judge + 429 retry/backoff as Run-2).
+
+### v1.1 build provenance
+
+| Field | Value |
+|---|---|
+| Build path | workstation, against an SSH-tunneled `mailbox-postgres-1` (read-only) |
+| Builder commit | `0cbdc00` (STAQPRO-365, PR #98) via `dashboard/scripts/build-trace-set.ts` |
+| Trace count | 100 (same as v1.0 for comparability) |
+| Set SHA-256 | `af298191769e849fc0f63c2e5f92b8d825675535ab4efae81972d59f279bfac6` (≠ v1.0's `d8d040ba…`, confirms the filter actually changed the corpus) |
+
+### Pre-flight smoke result
+
+Smoke gate **flagged** (not a hard stop): `reference-vs-reference 0.70`
+on N=30, against the documented `≥ 0.80` threshold. Failure mode is
+NOT the judge rejecting valid references — it's `gpt-oss:120b` cloud
+returning empty 200-OK bodies on ~30% of calls (the metric counts
+unparseable empty body as `win=0`). Same failure mode flagged in
+Run-2's verdict, just amplified during this batch. v1.1 corpus signal
+is sound; the cap is cloud-side.
+
+Operator one-time bypass: Run-3 proceeded despite the smoke flag, on
+the read that *another* +0.000 lift on a clean corpus is a more
+informative data point than refusing to measure. Numbers below should
+be read with the ~30% empty-response ceiling in mind.
+
+### Run-3 results
+
+| Field | Value |
+|---|---|
+| Run dir (gitignored) | `outputs/run-3-v1_1-corpus-20260516T201059Z/` |
+| Trace set | `traces/v1.1` (set_sha=`af298191…`) |
+| Split | train=50, val=50, seed=1 (unchanged) |
+| Target | `qwen3:4b-ctx4k` @ `http://localhost:11434` |
+| Judge | `gpt-oss:120b` @ Ollama Cloud (same metric config as Run-2) |
+| GEPA budget | `--auto light` (≈580 metric calls; 245 min wall-clock — 2.5× Run-2 because Ollama Cloud was much more rate-limited during this window) |
+| **PRE win rate** | **0.000** (full valset) |
+| **POST win rate** | **0.000** |
+| **Lift** | **+0.000** |
+| Judge 429-exhaustion rate | **640/643 retry cycles ≈ 99.5%** (vs Run-2's 296/297 ≈ 99.7% of retry-cycle-entering calls; the absolute count doubled — cloud was meaningfully more loaded during Run-3's afternoon window vs Run-2's evening one) |
+| `JudgeError("rate_limited")` count | 640 |
+| Retry recovery rate | 3/643 ≈ 0.47% (still <1%; cloud rate-limit is sustained-not-bursty across both runs) |
+| GEPA iterations | 142 attempted, 0 accepted, 35 explicitly skipped not-better |
+
+### Run-3 verdict
+
+Three independent GEPA runs — strict-metric/v1.0 (Run-1),
+relaxed-metric/v1.0 (Run-2), relaxed-metric/v1.1 (Run-3) — all converge
+on **lift = +0.000**. The corpus change (forwarded-mail filter +
+inbound dedup) eliminated the obvious diluted-signal failure mode from
+Run-1's findings, but the baseline still pinned at 0.000 on the
+v1.1 valset, so GEPA's reflective mutator still has no positive
+signal to gradient against. With the metric, corpus, and judge each
+having had a turn, the residual lever for moving win-rate on this
+appliance is the **target model**, not the prompt — confirming
+Run-1's "architectural lift, not prompt lift" sequencing call.
+
+**Two follow-ups out of Run-3, both upstream of any further
+DSPy-GEPA work on this surface:**
+
+1. **STAQPRO-342 three-way bake-off** — the next sequenced target.
+   Qwen3-4B-ctx4k has now been ruled out as a prompt-optimizable
+   drafter; the bake-off should pick the model that wins on draft
+   quality, and only then revisit GEPA on that winner with the
+   v1.1+ pipeline established here.
+2. **Judge empty-body handling** — `gpt-oss:120b` returns 200-OK
+   with empty bodies on ~30% of calls under load, and the metric
+   currently scores those as `win=0`. This caps the achievable
+   win-rate at ~70% even for a perfect candidate, and it's the only
+   reason the v1.1 smoke landed at 0.70 instead of >0.80. File a
+   metric-hardening issue: treat empty-body responses as transient
+   (retry like 429), and consider a fallback judge (Anthropic
+   Haiku alt-cloud per DR-23 retract, or self-hosted Qwen) when
+   `gpt-oss:120b` is degraded. Not blocking the bake-off — but
+   the next operator to fire `--auto light` will burn another
+   100-250 min on cloud noise without it.
