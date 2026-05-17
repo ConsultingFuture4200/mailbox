@@ -259,9 +259,7 @@ export async function runBakeOffOnTrace(
     stream: false,
     temperature: prompt.options.temperature,
     ...(prompt.options.top_p !== undefined ? { top_p: prompt.options.top_p } : {}),
-    ...(prompt.options.num_predict !== undefined
-      ? { max_tokens: prompt.options.num_predict }
-      : {}),
+    ...(prompt.options.num_predict !== undefined ? { max_tokens: prompt.options.num_predict } : {}),
     ...(prompt.options.seed !== undefined ? { seed: prompt.options.seed } : {}),
   };
 
@@ -388,12 +386,16 @@ export function aggregateBakeOffResults(
 
 function percentile(sortedAsc: readonly number[], q: number): number | null {
   if (sortedAsc.length === 0) return null;
-  if (sortedAsc.length === 1) return sortedAsc[0]!;
+  const first = sortedAsc[0];
+  if (sortedAsc.length === 1) return first ?? null;
   // Linear interpolation between closest ranks (Type 7, R's default).
   const idx = q * (sortedAsc.length - 1);
   const lo = Math.floor(idx);
   const hi = Math.ceil(idx);
-  if (lo === hi) return sortedAsc[lo]!;
+  const loVal = sortedAsc[lo];
+  const hiVal = sortedAsc[hi];
+  if (loVal === undefined || hiVal === undefined) return null;
+  if (lo === hi) return loVal;
   const w = idx - lo;
-  return sortedAsc[lo]! * (1 - w) + sortedAsc[hi]! * w;
+  return loVal * (1 - w) + hiVal * w;
 }

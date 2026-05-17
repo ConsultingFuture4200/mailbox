@@ -172,17 +172,17 @@ function required(value: string | undefined, flag: string): string {
  * `rowToTrace` in case pg ever changes its default.
  */
 interface SourceRow {
-  sent_history_id: string;            // bigint → string
-  inbox_id: number;                   // integer → number
+  sent_history_id: string; // bigint → string
+  inbox_id: number; // integer → number
   inbox_message_id: string;
   inbox_thread_id: string | null;
   inbox_from: string | null;
   inbox_subject: string | null;
   inbox_body: string;
   inbox_classification: string | null;
-  inbox_confidence: string | null;    // numeric → string
+  inbox_confidence: string | null; // numeric → string
   actual_reply_body: string;
-  reply_sent_at: string | Date;       // timestamptz → Date (unless setTypeParser overridden)
+  reply_sent_at: string | Date; // timestamptz → Date (unless setTypeParser overridden)
 }
 
 /**

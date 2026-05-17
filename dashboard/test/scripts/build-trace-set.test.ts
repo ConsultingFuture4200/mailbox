@@ -20,13 +20,13 @@
 // asserts row counts; v1 here is the shape-and-regex layer.)
 
 import { describe, expect, it } from 'vitest';
+import { traceSchema } from '@/lib/eval/trace-set';
 import {
   buildSourceSql,
   FORWARDED_BODY_REGEX_SQL,
   rowToTrace,
   type SourceRow,
 } from '@/scripts/build-trace-set';
-import { traceSchema } from '@/lib/eval/trace-set';
 
 // JS-side equivalent of the Postgres POSIX regex. Postgres `[[:space:]]` ≈ JS
 // `\s`, `\w` is the same on both. We DO NOT include the SUBSTRING-from-101

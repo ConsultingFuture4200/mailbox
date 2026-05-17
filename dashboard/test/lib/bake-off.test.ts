@@ -12,11 +12,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   aggregateBakeOffResults,
-  checkFunctionCallValid,
-  runBakeOffOnTrace,
   type BakeOffPerTraceResult,
   type BakeOffPrompt,
+  checkFunctionCallValid,
   type ModelEndpoint,
+  runBakeOffOnTrace,
 } from '@/lib/eval/bake-off';
 import { TRACE_FORMAT_VERSION, type Trace } from '@/lib/eval/trace-set';
 
@@ -178,9 +178,11 @@ describe('runBakeOffOnTrace — STAQPRO-342', () => {
   });
 
   it('captures HTTP 5xx as status=http_5xx and never throws', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      new Response('upstream blew up', { status: 503 }),
-    ) as unknown as typeof fetch;
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('upstream blew up', { status: 503 }),
+      ) as unknown as typeof fetch;
 
     const result = await runBakeOffOnTrace(
       makeTrace(),
@@ -198,9 +200,9 @@ describe('runBakeOffOnTrace — STAQPRO-342', () => {
   });
 
   it('captures HTTP 4xx as status=http_4xx', async () => {
-    const fetchFn = vi.fn().mockResolvedValue(
-      new Response('bad request', { status: 400 }),
-    ) as unknown as typeof fetch;
+    const fetchFn = vi
+      .fn()
+      .mockResolvedValue(new Response('bad request', { status: 400 })) as unknown as typeof fetch;
 
     const result = await runBakeOffOnTrace(
       makeTrace(),
@@ -215,9 +217,7 @@ describe('runBakeOffOnTrace — STAQPRO-342', () => {
   });
 
   it('captures fetch rejection as status=fetch_error', async () => {
-    const fetchFn = vi
-      .fn()
-      .mockRejectedValue(new Error('econnrefused')) as unknown as typeof fetch;
+    const fetchFn = vi.fn().mockRejectedValue(new Error('econnrefused')) as unknown as typeof fetch;
 
     const result = await runBakeOffOnTrace(
       makeTrace(),

@@ -38,23 +38,23 @@
 // Treat the same as `dashboard/eval/results/` (gitignored).
 
 import { createHash } from 'node:crypto';
-import { appendFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
   aggregateBakeOffResults,
-  runBakeOffOnTrace,
   type BakeOffPerTraceResult,
   type BakeOffPrompt,
   type BakeOffRunProvenance,
   type ChatMessage,
   type ModelEndpoint,
+  runBakeOffOnTrace,
 } from '../lib/eval/bake-off';
 import {
+  type Trace,
   traceManifestSchema,
   traceSchema,
   verifyManifest,
-  type Trace,
 } from '../lib/eval/trace-set';
 
 // ── Args ──────────────────────────────────────────────────────────────
@@ -104,7 +104,8 @@ export function parseArgs(argv: readonly string[]): CliArgs {
   };
 
   for (let i = 0; i < argv.length; i++) {
-    const a = argv[i]!;
+    const a = argv[i];
+    if (a === undefined) continue;
     if (a === '--model') {
       model = need('--model', argv[i + 1]);
       i++;
@@ -321,7 +322,7 @@ function assembleMinimalDrafterPrompt(
       'Respond ONLY with a JSON object in this exact shape:',
       '{ "body": "<your reply, plain text>", "subject": "<optional re: subject>" }',
       'No prose before or after the JSON. No code fences. No commentary.',
-      'Tone: professional, friendly, concise. Match the inbound\'s register.',
+      "Tone: professional, friendly, concise. Match the inbound's register.",
     ].join('\n'),
   };
   const user: ChatMessage = {
@@ -365,8 +366,7 @@ async function main(): Promise<void> {
   );
 
   const loaded = await loadTraceSetForBakeOff(args.trace_set);
-  const traces =
-    args.limit < 0 ? loaded.traces : loaded.traces.slice(0, args.limit);
+  const traces = args.limit < 0 ? loaded.traces : loaded.traces.slice(0, args.limit);
   console.log(
     `[bake-off] loaded ${loaded.traces.length} traces (set=${loaded.set_version}, ` +
       `appliance=${loaded.source_appliance}); running ${traces.length}.`,
@@ -392,7 +392,9 @@ async function main(): Promise<void> {
   const results: BakeOffPerTraceResult[] = [];
 
   for (let i = 0; i < traces.length; i++) {
-    const { trace, filename } = traces[i]!;
+    const entry = traces[i];
+    if (entry === undefined) continue;
+    const { trace, filename } = entry;
     const prompt = assembleMinimalDrafterPrompt(trace, {
       temperature: args.temperature,
       seed: args.seed,
