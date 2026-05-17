@@ -436,12 +436,27 @@ the appliance has been on the router LAN since the bring-up move.
 
 ### Deploy flow
 
+> **⚠️ TRANSIENT — M1 is currently NOT on `master`** (state as of 2026-05-17).
+> M1's checkout is on branch `worktree-staqpro-360` — DR-25 prod fixes were
+> committed there and never came back to master cleanly. PR #113 reconciles
+> the 12 missing commits upstream; once merged, an operator-coordinated step
+> switches M1 to master via `ssh mailbox1 'cd ~/mailbox && git fetch origin
+> && git checkout master && git pull && docker compose up -d'`. The compose
+> + image + model are all already master-equivalent thanks to PR #111, so
+> the checkout switch should be a no-op on prod state — verify with
+> `docker compose ps` + `/v1/models` immediately after.
+>
+> Until that switch lands, **`git pull` on M1 will fail with merge
+> conflicts** (M1 is 12 ahead / 24 behind master, with a real conflict on
+> `MAILBOX_LOCAL_MODEL_OVERRIDE` env var). Do not run the one-liner below
+> against M1 until the switch is done. Tracker: STAQPRO-360.
+
 This local clone is the source of truth. Edit here, commit, push, then on the Jetson: pull and reload.
 
     # On this workstation
     git add . && git commit -m "..." && git push origin master
 
-    # Apply on the Jetson (one-liner from this workstation)
+    # Apply on the Jetson (one-liner from this workstation — VALID AGAIN POST-CHECKOUT-SWITCH)
     ssh mailbox1 'cd ~/mailbox && git pull && docker compose up -d --build --remove-orphans'
 
 **Always pass `--remove-orphans`** on full-stack `up` calls. When a service is removed from `docker-compose.yml` (e.g., the ttyd removal in STAQPRO-182), the running container becomes an orphan and keeps its host port binding — `--remove-orphans` cleans it up automatically. Without it, you'll see `docker compose down <service>` return "no such service" while the container is still listening.
