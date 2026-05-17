@@ -47,7 +47,8 @@ const OLLAMA_CLOUD_KEY = process.env.OLLAMA_CLOUD_API_KEY ?? '';
 // every internal-route URL crossing the docker network into the dashboard must
 // include it (STAQPRO-360 root-cause of the 2026-05-14 cutover revert).
 const DASHBOARD_LLM_PROXY_BASE =
-  process.env.DASHBOARD_LLM_PROXY_BASE_URL ?? 'http://mailbox-dashboard:3001/dashboard/api/internal/llm';
+  process.env.DASHBOARD_LLM_PROXY_BASE_URL ??
+  'http://mailbox-dashboard:3001/dashboard/api/internal/llm';
 
 function pickLocalEndpoint(): DraftEndpoint {
   const runtime = readRuntimeKind();
