@@ -436,20 +436,27 @@ the appliance has been on the router LAN since the bring-up move.
 
 ### Deploy flow
 
-> **⚠️ TRANSIENT — M1 is currently NOT on `master`** (state as of 2026-05-17).
-> M1's checkout is on branch `worktree-staqpro-360` — DR-25 prod fixes were
-> committed there and never came back to master cleanly. PR #113 reconciles
-> the 12 missing commits upstream; once merged, an operator-coordinated step
-> switches M1 to master via `ssh mailbox1 'cd ~/mailbox && git fetch origin
-> && git checkout master && git pull && docker compose up -d'`. The compose
-> + image + model are all already master-equivalent thanks to PR #111, so
-> the checkout switch should be a no-op on prod state — verify with
-> `docker compose ps` + `/v1/models` immediately after.
+> **⚠️ TRANSIENT — M1 is on `master` BUT the source for 12 STAQPRO-360
+> prod fixes is temporarily regressed** (state as of 2026-05-17 12:35 PDT).
+> The operator switched M1's checkout from `worktree-staqpro-360` → `master`
+> via `git checkout master && git pull` — the switch fast-forwarded cleanly
+> (23 commits). However, the deploy branch had 12 prod fixes that never
+> came back to master; switching to master "lost" those fixes from the
+> working tree.
 >
-> Until that switch lands, **`git pull` on M1 will fail with merge
-> conflicts** (M1 is 12 ahead / 24 behind master, with a real conflict on
-> `MAILBOX_LOCAL_MODEL_OVERRIDE` env var). Do not run the one-liner below
-> against M1 until the switch is done. Tracker: STAQPRO-360.
+> **The dashboard + llama-cpp containers are still serving correctly** —
+> they were built BEFORE the checkout switch (image `89ac24a1...` created
+> 09:41 PDT today) from the deploy-branch source which had the fixes.
+> Runtime is unaffected. Verify: `docker compose ps` clean,
+> `/v1/models` returns `Qwen3-4B-Instruct-2507-Q4_K_M.gguf`, classify lag
+> green.
+>
+> **DO NOT** run `docker compose up -d --build` against M1 until PR #113
+> merges. Rebuilding now would build from the regressed master source and
+> would re-break STAQPRO-360 fixes (response_format JSON, /v1/chat/completions
+> routing, hardcoded gpt-3.5-turbo override, /dashboard/ basePath, n8n
+> classify timeout). After PR #113 merges, run the full one-liner below
+> (with `--build --remove-orphans`) to land the fixes properly.
 
 This local clone is the source of truth. Edit here, commit, push, then on the Jetson: pull and reload.
 
